@@ -52,16 +52,6 @@ struct variant _wrap_ptr(void *ptr) {
   return (struct variant){.T = VARIANT_PTR, .ptr = ptr};
 }
 
-/*
- * Iterate sequence and reset after n iterations.
- */
-#define seq_iter(s)                                                            \
-  ((struct sequence){                                                          \
-      .v = (s).fn((s).it), .fn = (s).fn, .n = (s).n, .it = (s).it + 1})
-struct sequence seq_next(struct sequence s) {
-  return s.n > s.it ? seq_iter(s) : seq(s.fn, s.n);
-}
-
 #define param(x, y) ((struct parameter){.name = (x), .v = (y)})
 
 static char *result_str[] = {

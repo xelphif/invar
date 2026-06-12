@@ -58,18 +58,6 @@ struct variant _wrap_ptr(void *);
 #define unwrap_as_ptr(v) (assert((v).T == VARIANT_PTR), (v).ptr)
 
 /*
- * Value generator over a sequence defined by a function.
- */
-struct sequence {
-  struct variant v;
-  struct variant (*fn)(int);
-  int n;
-  int it;
-};
-
-#define seq(x, y) ((struct sequence){wrap_none(), .fn = (x), .n = (y), .it = 0})
-
-/*
  * Container for all possible values a test paramter can take on.
  *
  * TODO: implement sequences and wild card inputs.
