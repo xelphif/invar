@@ -153,11 +153,12 @@ struct result run(void (*fn)(struct parameter *), struct parameter *p) {
 
   close(pipefd[1]);
 
-  struct result r;
-  read(pipefd[0], &r.t_elapsed, sizeof(double));
-
   int status;
   waitpid(cpid, &status, 0);
+
+  struct result r;
+  if (read(pipefd[0], &r.t_elapsed, sizeof(double)) == -1)
+    exit(EXIT_FAILURE);
 
   if (WIFEXITED(status)) {
     r.rt = WEXITSTATUS(status) ? RESULT_FAIL : RESULT_OK;
