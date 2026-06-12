@@ -23,7 +23,8 @@ enum xlog_level {
 };
 
 static char *xlog_level_str[] = {
-    "TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL",
+    [XLOG_TRACE] = "TRACE", [XLOG_DEBUG] = "DEBUG", [XLOG_INFO] = "INFO",
+    [XLOG_WARN] = "WARN",   [XLOG_ERROR] = "ERROR", [XLOG_FATAL] = "FATAL",
 };
 
 // TODO: variadic / color
@@ -64,9 +65,9 @@ struct sequence seq_next(struct sequence s) {
 #define param(x, y) ((struct parameter){.name = (x), .v = (y)})
 
 static char *result_str[] = {
-    " OK ",
-    "FAIL",
-    "SKIP",
+    [RESULT_OK] = " OK ",
+    [RESULT_FAIL] = "FAIL",
+    [RESULT_SKIP] = "SKIP",
 };
 
 /*
