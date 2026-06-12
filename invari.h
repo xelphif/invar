@@ -62,20 +62,20 @@ struct variant _wrap_ptr(void *);
  *
  * TODO: implement sequences and wild card inputs.
  */
-struct domain {
+struct input_space {
   char *name;
   struct variant *v;
 };
 
-struct parameter {
+struct instance {
   char *name;
   struct variant v;
 };
 
-struct test {
+struct operation {
   char *name;
-  void (*fn)(struct parameter *p);
-  struct domain *d;
+  void (*fn)(struct instance *p);
+  struct input_space *space;
 };
 
 enum result_type {
@@ -90,6 +90,6 @@ struct result {
 };
 
 // TEMP DECL to test ergo
-int run_args(struct test t);
+int run_args(struct operation t);
 
 #endif

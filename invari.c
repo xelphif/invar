@@ -52,7 +52,7 @@ struct variant _wrap_ptr(void *ptr) {
   return (struct variant){.T = VARIANT_PTR, .ptr = ptr};
 }
 
-#define param(x, y) ((struct parameter){.name = (x), .v = (y)})
+#define instance_init(x, y) ((struct instance){.name = (x), .v = (y)})
 
 static char *result_str[] = {
     [RESULT_OK] = " OK ",
@@ -65,12 +65,12 @@ static char *result_str[] = {
  *
  * TODO: Improve counting for both dimensions of domain.
  */
-int tick(struct domain *d, int n, int *index) {
+int tick(struct input_space *space, int n, int *index) {
   for (int i = n - 1; i >= 0; i--) {
-    if (!(d + i)->name)
+    if (!(space + i)->name)
       continue;
 
-    struct domain *d_i = d + i;
+    struct input_space *d_i = space + i;
     struct variant *v_n = d_i->v + index[i] + 1;
 
     if (v_n->T == VARIANT_NONE) {
@@ -110,7 +110,7 @@ double timer(void) {
  * TODO: report with time elapsed and exist status so run_args can handle
  * printing
  */
-struct result run(void (*fn)(struct parameter *), struct parameter *p) {
+struct result run(void (*fn)(struct instance *), struct instance *p) {
 
   int pipefd[2];
 
@@ -162,34 +162,34 @@ struct result run(void (*fn)(struct parameter *), struct parameter *p) {
   return r;
 }
 
-void print_result(struct test t, struct result r) {
+void print_result(struct operation t, struct result r) {
   printf("%s: %s, %.9fsec\n", t.name, result_str[r.rt], r.t_elapsed);
 }
 
 /*
- * Run a test with each set of paramters from a domain.
+ * Run a test with each set of instances from an input space.
  */
-int run_args(struct test t) {
+int run_args(struct operation t) {
   int n = 0;
-  for (int i = 0; (t.d + i)->name; i++)
+  for (int i = 0; (t.space + i)->name; i++)
     n++;
 
-  struct parameter p[n];
+  struct instance p[n];
   int index[n];
 
   // Populate array of parameters based on domain.
   for (int i = 0; i < n; i++) {
-    p[i] = param(t.d[i].name, wrap_none());
+    p[i] = instance_init(t.space[i].name, wrap_none());
     index[i] = 0;
   }
 
   do {
     // Set each parameter to the appropriate index in domain.
     for (int i = 0; i < n; i++)
-      p[i].v = *((t.d + i)->v + index[i]);
+      p[i].v = *((t.space + i)->v + index[i]);
 
     print_result(t, run(t.fn, p));
-  } while (!tick(t.d, n, index));
+  } while (!tick(t.space, n, index));
 
   return 0;
 };
