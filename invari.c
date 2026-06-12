@@ -42,8 +42,8 @@ void xlog(enum xlog_level level, char *msg) {
 struct variant _wrap_int(int i) {
   return (struct variant){.T = VARIANT_INT, .i = i};
 }
-struct variant _wrap_float(float f) {
-  return (struct variant){.T = VARIANT_FLOAT, .f = f};
+struct variant _wrap_double(double d) {
+  return (struct variant){.T = VARIANT_DOUBLE, .d = d};
 }
 struct variant _wrap_str(char *str) {
   return (struct variant){.T = VARIANT_STR, .str = str};
