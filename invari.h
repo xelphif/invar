@@ -70,21 +70,15 @@ struct instance {
 
 struct variant instance_get(struct instance *A, char *k);
 
-enum result {
-  RESULT_FAIL,
-  RESULT_OK,
-  RESULT_SKIP,
-};
-
 struct report {
   unsigned int it;
-  enum result r;
+  bool ok;
   struct {
     double mean;
     double min;
     double max;
   } t;
-  int c[3];
+  int c[2];
 };
 
 struct property {

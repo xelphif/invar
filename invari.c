@@ -42,9 +42,8 @@ struct variant instance_get(struct instance *A, char *k) {
 }
 
 static char *result_str[] = {
-    [RESULT_FAIL] = "FAIL",
-    [RESULT_OK] = " OK ",
-    [RESULT_SKIP] = "SKIP",
+    [false] = "FAIL",
+    [true] = " OK ",
 };
 
 /*
@@ -107,10 +106,10 @@ struct report run(struct property *prop) {
 
     double elapsed = timer();
 
-    r.r = prop->predicate(instances, ctx);
+    r.ok = prop->predicate(instances, ctx);
 
     // Add result to accumulator.
-    r.c[r.r]++;
+    r.c[r.ok]++;
 
     elapsed = timer() - elapsed;
     r.t.mean = mean(r.t.mean, elapsed, r.it);
@@ -170,13 +169,13 @@ int run_spec(struct specification spec) {
     waitpid(cpid, &status, 0);
 
     if (WIFSIGNALED(status)) {
-      r.r = RESULT_FAIL;
+      r.ok = false;
     }
 
     printf("  [%s] %s... %d out of %d passed, mean: %.9fs, range: [%.9fs, "
            "%.9fs]\n",
-           result_str[r.r], (spec.props + i)->name, r.c[RESULT_OK], r.it,
-           r.t.mean, r.t.min, r.t.max);
+           result_str[r.ok], (spec.props + i)->name, r.c[true], r.it, r.t.mean,
+           r.t.min, r.t.max);
   }
 
   return 0;
