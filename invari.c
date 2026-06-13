@@ -109,6 +109,9 @@ struct report run(struct property *prop) {
 
     r.r = prop->predicate(instances, ctx);
 
+    // Add result to accumulator.
+    r.c[r.r]++;
+
     elapsed = timer() - elapsed;
     r.t.mean = mean(r.t.mean, elapsed, r.it);
     minmax(&r.t.min, &r.t.max, elapsed);
@@ -170,8 +173,10 @@ int run_spec(struct specification spec) {
       r.r = RESULT_FAIL;
     }
 
-    printf("  [%s] %s... mean: %.9fs, range: [%.9fs, %.9fs]\n", result_str[r.r],
-           (spec.props + i)->name, r.t.mean, r.t.min, r.t.max);
+    printf("  [%s] %s... %d out of %d passed, mean: %.9fs, range: [%.9fs, "
+           "%.9fs]\n",
+           result_str[r.r], (spec.props + i)->name, r.c[RESULT_OK], r.it,
+           r.t.mean, r.t.min, r.t.max);
   }
 
   return 0;
