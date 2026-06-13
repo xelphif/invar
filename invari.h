@@ -71,8 +71,8 @@ struct instance {
 struct variant instance_get(struct instance *A, char *k);
 
 enum result {
-  RESULT_OK,
   RESULT_FAIL,
+  RESULT_OK,
   RESULT_SKIP,
 };
 

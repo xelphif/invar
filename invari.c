@@ -42,8 +42,8 @@ struct variant instance_get(struct instance *A, char *k) {
 }
 
 static char *result_str[] = {
-    [RESULT_OK] = " OK ",
     [RESULT_FAIL] = "FAIL",
+    [RESULT_OK] = " OK ",
     [RESULT_SKIP] = "SKIP",
 };
 
@@ -95,7 +95,7 @@ struct report run(struct property *prop) {
 
     double elapsed = timer();
 
-    prop->predicate(instances, ctx);
+    r.r = prop->predicate(instances, ctx);
 
     r.elapsed = timer() - elapsed;
   }
@@ -152,16 +152,12 @@ int run_spec(struct specification spec) {
     int status;
     waitpid(cpid, &status, 0);
 
-    if (WIFEXITED(status)) {
-      r.r = WEXITSTATUS(status) ? RESULT_FAIL : RESULT_OK;
-    }
-
     if (WIFSIGNALED(status)) {
       r.r = RESULT_FAIL;
     }
 
     printf("  [%s] %s... %.9fs\n", result_str[r.r], (spec.props + i)->name,
-           r.r ? 0 : r.elapsed);
+           r.r ? r.elapsed : 0);
   }
 
   return 0;
