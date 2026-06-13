@@ -28,6 +28,10 @@ struct variant _wrap_ptr(void *ptr) {
 }
 
 #define instance_init(x, y) ((struct instance){.name = (x), .v = (y)})
+
+/*
+ * Search for a variant by instance name.
+ */
 struct variant instance_get(struct instance *A, char *k) {
   for (int i = 0; (A + i)->name; i++) {
     if (!strcmp((A + i)->name, k))
@@ -81,6 +85,7 @@ struct report run(struct operation *op) {
 
   struct report r = (struct report){0};
 
+  // Execute function n times, recording the iteration in the report.
   for (r.it = 0; r.it < 100; r.it++) {
 
     for (int i = 0; (curr = op->space + i)->name; i++) {
