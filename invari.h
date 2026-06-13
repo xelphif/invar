@@ -79,7 +79,11 @@ enum result {
 struct report {
   unsigned int it;
   enum result r;
-  double elapsed;
+  struct {
+    double mean;
+    double min;
+    double max;
+  } t;
 };
 
 struct property {

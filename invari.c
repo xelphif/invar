@@ -67,6 +67,18 @@ void _array_grow(void **A, int n, size_t t) { *A = realloc(*A, n * t); }
 #define array_push(A, n, e) (array_grow((A), (n)), (A)[(n)] = (e))
 
 /*
+ * Timing statistics helper functions
+ */
+static double mean(double old, double t, int n) {
+  return ((old * n) + t) / (n + 1);
+}
+static void minmax(double *min, double *max, double n) {
+  if (*min == 0.0 || *min > n)
+    *min = n;
+  *max = *max < n ? n : *max;
+}
+
+/*
  * Verify a property
  */
 struct report run(struct property *prop) {
@@ -97,7 +109,9 @@ struct report run(struct property *prop) {
 
     r.r = prop->predicate(instances, ctx);
 
-    r.elapsed = timer() - elapsed;
+    elapsed = timer() - elapsed;
+    r.t.mean = mean(r.t.mean, elapsed, r.it);
+    minmax(&r.t.min, &r.t.max, elapsed);
   }
 
   if (prop->poststate)
@@ -156,8 +170,8 @@ int run_spec(struct specification spec) {
       r.r = RESULT_FAIL;
     }
 
-    printf("  [%s] %s... %.9fs\n", result_str[r.r], (spec.props + i)->name,
-           r.r ? r.elapsed : 0);
+    printf("  [%s] %s... mean: %.9fs, range: [%.9fs, %.9fs]\n", result_str[r.r],
+           (spec.props + i)->name, r.t.mean, r.t.min, r.t.max);
   }
 
   return 0;
