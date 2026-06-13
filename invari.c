@@ -92,12 +92,11 @@ struct report run(struct property *prop) {
   }
   array_push(instances, n, (struct instance){0});
 
-  void *ctx = prop->prestate ? prop->prestate() : NULL;
-
   struct report r = (struct report){0};
 
   // Execute function n times, recording the iteration in the report.
   for (int i = 0; i < 100; i++) {
+    void *ctx = prop->prestate ? prop->prestate() : NULL;
 
     // Populate lookup table using output from generator functions.
     for (int i = 0; (curr = prop->space + i)->name; i++) {
@@ -114,10 +113,10 @@ struct report run(struct property *prop) {
     elapsed = timer() - elapsed;
     r.t.mean = mean(r.t.mean, elapsed, i);
     minmax(&r.t.min, &r.t.max, elapsed);
-  }
 
-  if (prop->poststate)
-    prop->poststate(ctx);
+    if (prop->poststate)
+      prop->poststate(ctx);
+  }
 
   free(instances);
 
