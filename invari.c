@@ -173,7 +173,7 @@ int run_spec(struct specification spec) {
 
     printf("  [%s] %s... %d out of %d passed, mean: %.9fs, range: [%.9fs, "
            "%.9fs]\n",
-           result_str[r.ok], (spec.props + i)->name, r.c[true],
+           result_str[!r.c[false]], (spec.props + i)->name, r.c[true],
            r.c[true] + r.c[false], r.t.mean, r.t.min, r.t.max);
   }
 

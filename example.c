@@ -68,6 +68,12 @@ bool add_inverse(struct instance *i, void *ctx) {
   return add(a, -a) == 0;
 }
 
+bool add_less_than_50(struct instance *i, void *ctx) {
+  int a = unwrap_as_int(instance_get(i, "a"));
+
+  return a < 50;
+}
+
 struct property props[] = {
     {
         .name = "commutativity", /* Name of the property for reporting. */
@@ -103,6 +109,15 @@ struct property props[] = {
     {
         .name = "inverse",
         .predicate = add_inverse,
+        .space =
+            (struct input_space[]){
+                {.name = "a", gen_int},
+                {0},
+            },
+    },
+    {
+        .name = "less_than_50",
+        .predicate = add_less_than_50,
         .space =
             (struct input_space[]){
                 {.name = "a", gen_int},
