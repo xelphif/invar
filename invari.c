@@ -158,7 +158,7 @@ int run_spec(struct specification spec) {
 
     close(pipefd[1]);
 
-    struct report r;
+    struct report r = {0};
     if (read(pipefd[0], &r, sizeof(struct report)) == -1)
       exit(EXIT_FAILURE);
 
