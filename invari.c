@@ -53,44 +53,19 @@ struct variant _wrap_ptr(void *ptr) {
 }
 
 #define instance_init(x, y) ((struct instance){.name = (x), .v = (y)})
+struct variant instance_get(struct instance *A, char *k) {
+  for (int i = 0; (A + i)->name; i++)
+    if (!strcmp((A + i)->name, k))
+      return (A + i)->v;
+
+  return (struct variant){0};
+}
 
 static char *result_str[] = {
     [RESULT_OK] = " OK ",
     [RESULT_FAIL] = "FAIL",
     [RESULT_SKIP] = "SKIP",
 };
-
-/*
- * Permute array of n indices into domain.
- *
- * TODO: Improve counting for both dimensions of domain.
- */
-int tick(struct input_space *space, int n, int *index) {
-  for (int i = n - 1; i >= 0; i--) {
-    if (!(space + i)->name)
-      continue;
-
-    struct input_space *d_i = space + i;
-    struct variant *v_n = d_i->v + index[i] + 1;
-
-    if (v_n->T == VARIANT_NONE) {
-      if (!i) {
-        // If our first value reaches its final value, we are finished. Reset
-        // all indices and return 1.
-        for (int i = 0; i < n; i++)
-          index[i] = 0;
-        return 1;
-      }
-
-      index[i] = 0;
-      continue;
-    }
-
-    index[i]++;
-    break;
-  }
-  return 0;
-}
 
 /*
  * Get current time with nanosecond precision.
@@ -105,91 +80,100 @@ double timer(void) {
 }
 
 /*
- * Run function in separate process and wait.
- *
- * TODO: report with time elapsed and exist status so run_args can handle
- * printing
+ * Primitive "dynamic" array to construct instance array.
  */
-struct result run(void (*fn)(struct instance *), struct instance *p) {
+void _array_grow(void **A, int n, size_t t) { *A = realloc(*A, n * t); }
+#define array_grow(A, n) _array_grow((void **)&(A), (n) + 1, sizeof((A)[0]))
+#define array_push(A, n, e) (array_grow((A), (n)), (A)[(n)] = (e))
 
-  int pipefd[2];
+/*
+ * Verify an operation using its properties.
+ */
+struct report run(struct operation *op) {
 
-  if (pipe(pipefd))
-    exit(EXIT_FAILURE);
+  struct instance *instances = NULL;
+  struct input_space *curr = NULL;
 
-  // Run and time test in separate process.
-  pid_t cpid = fork();
-  if (cpid == 0) {
-    close(pipefd[0]);
+  // Construct a lookup table for arguments and their instances.
+  for (int i = 0; (curr = op->space + i)->name; i++)
+    array_push(instances, i, instance_init(curr->name, (struct variant){0}));
 
-    double start = timer();
+  void *ctx = op->prestate ? op->prestate() : NULL;
 
-    fn(p);
+  struct report r = (struct report){0};
 
-    double elapsed = timer() - start;
+  for (r.it = 0; r.it < 100; r.it++) {
 
-    if (write(pipefd[1], &elapsed, sizeof(double)) < 0)
-      exit(EXIT_FAILURE);
+    for (int i = 0; (curr = op->space + i)->name; i++)
+      instances[i].v = curr->gen ? curr->gen() : (struct variant){0};
 
-    close(pipefd[1]);
+    double elapsed = timer();
 
-    exit(EXIT_SUCCESS);
+    op->fn(instances, ctx);
+
+    r.elapsed = timer() - elapsed;
   }
 
-  if (cpid == -1) {
-    close(pipefd[0]);
-    close(pipefd[1]);
-    exit(EXIT_FAILURE);
-  }
+  if (op->poststate)
+    op->poststate(ctx);
 
-  close(pipefd[1]);
-
-  int status;
-  waitpid(cpid, &status, 0);
-
-  struct result r;
-  if (read(pipefd[0], &r.t_elapsed, sizeof(double)) == -1)
-    exit(EXIT_FAILURE);
-
-  if (WIFEXITED(status)) {
-    r.rt = WEXITSTATUS(status) ? RESULT_FAIL : RESULT_OK;
-  }
-
-  if (WIFSIGNALED(status)) {
-    r.rt = RESULT_FAIL;
-  }
+  free(instances);
 
   return r;
 }
 
-void print_result(struct operation t, struct result r) {
-  printf("%s: %s, %.9fsec\n", t.name, result_str[r.rt], r.t_elapsed);
-}
-
 /*
- * Run a test with each set of instances from an input space.
+ * Verify each operation in a specification and collect analytics.
  */
-int run_args(struct operation t) {
-  int n = 0;
-  for (int i = 0; (t.space + i)->name; i++)
-    n++;
+int run_spec(struct specification spec) {
 
-  struct instance p[n];
-  int index[n];
+  printf("Verifying '%s' specification\n", spec.name);
+  for (int i = 0; (spec.ops + i)->name; i++) {
 
-  // Populate array of parameters based on domain.
-  for (int i = 0; i < n; i++) {
-    p[i] = instance_init(t.space[i].name, wrap_none());
-    index[i] = 0;
+    int pipefd[2];
+    if (pipe(pipefd))
+      exit(EXIT_FAILURE);
+
+    pid_t cpid = fork();
+
+    if (cpid == 0) {
+      close(pipefd[0]);
+
+      struct report r = run(spec.ops + i);
+
+      if (write(pipefd[1], &r, sizeof(struct report)) < 0)
+        exit(EXIT_FAILURE);
+
+      close(pipefd[1]);
+
+      exit(EXIT_SUCCESS);
+    }
+
+    if (cpid == -1) {
+      close(pipefd[0]);
+      close(pipefd[1]);
+      exit(EXIT_FAILURE);
+    }
+
+    close(pipefd[1]);
+
+    int status;
+    waitpid(cpid, &status, 0);
+
+    struct report r;
+    read(pipefd[0], &r, sizeof(struct report));
+
+    if (WIFEXITED(status)) {
+      r.r = WEXITSTATUS(status) ? RESULT_FAIL : RESULT_OK;
+    }
+
+    if (WIFSIGNALED(status)) {
+      r.r = RESULT_FAIL;
+    }
+
+    printf("  [%s] %s... %.9fs\n", result_str[r.r], (spec.ops + i)->name,
+           r.r ? 0 : r.elapsed);
   }
-
-  do {
-    // Set each parameter to the appropriate index in domain.
-    for (int i = 0; i < n; i++)
-      p[i].v = *((t.space + i)->v + index[i]);
-
-    print_result(t, run(t.fn, p));
-  } while (!tick(t.space, n, index));
 
   return 0;
 };

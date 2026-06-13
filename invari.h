@@ -2,6 +2,7 @@
 #define INVARI_H
 
 #include <assert.h>
+#include <stdbool.h>
 
 /*
  * Generic container for function parameters.
@@ -47,11 +48,6 @@ struct variant _wrap_ptr(void *);
 #define wrap_str(x) ((struct variant){.T = VARIANT_STR, .str = (x)})
 #define wrap_ptr(x) ((struct variant){.T = VARIANT_PTR, .ptr = (x)})
 
-/*
- * MAYBE KEEP: 'None' type for end of sequences.
- */
-#define wrap_none() ((struct variant){.T = VARIANT_NONE, .i = 0})
-
 #define unwrap_as_int(v) (assert((v).T == VARIANT_INT), (v).i)
 #define unwrap_as_double(v) (assert((v).T == VARIANT_DOUBLE), (v).d)
 #define unwrap_as_str(v) (assert((v).T == VARIANT_STR), (v).str)
@@ -64,7 +60,7 @@ struct variant _wrap_ptr(void *);
  */
 struct input_space {
   char *name;
-  struct variant *v;
+  struct variant (*gen)(void);
 };
 
 struct instance {
@@ -72,24 +68,41 @@ struct instance {
   struct variant v;
 };
 
-struct operation {
-  char *name;
-  void (*fn)(struct instance *p);
-  struct input_space *space;
-};
+struct variant instance_get(struct instance *A, char *k);
 
-enum result_type {
+enum result {
   RESULT_OK,
   RESULT_FAIL,
   RESULT_SKIP,
 };
 
-struct result {
-  enum result_type rt;
-  double t_elapsed;
+struct report {
+  unsigned int it;
+  enum result r;
+  double elapsed;
+};
+
+enum property_type {
+  PROP_PRECONDITION,
+  PROP_INVARIANT,
+  PROP_POSTCONDITION,
+};
+
+struct operation {
+  char *name;
+  void (*fn)(struct instance *i, void *ctx);
+  void *(*prestate)(void);
+  void (*poststate)(void *ctx);
+  struct input_space *space;
+  bool (**props[3])(void *ctx);
+};
+
+struct specification {
+  char *name;
+  struct operation *ops;
 };
 
 // TEMP DECL to test ergo
-int run_args(struct operation t);
+int run_spec(struct specification spec);
 
 #endif

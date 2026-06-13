@@ -1,39 +1,86 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "invari.h"
 
-static struct variant a_space[] = {wrap_i(1), wrap_i(2), wrap_i(5),
-                                   wrap_none()};
-static struct variant b_space[] = {wrap_i(10), wrap_i(20), wrap_i(50),
-                                   wrap_none()};
-static struct variant c_space[] = {wrap_i(100), wrap_i(200), wrap_i(500),
-                                   wrap_none()};
-static struct input_space space[] = {
-    {"a", a_space},
-    {"b", b_space},
-    {"c", c_space},
-    {NULL, NULL},
+struct variant gen_int(void) {
+  return wrap(rand() % 100);
+}
+
+struct input_space add_spaces[] = {
+    {.name = "a", .gen = gen_int},
+    {.name = "b", .gen = gen_int},
+    {0},
 };
 
 /*
- * REMOVE: Placeholder test function
+ * Data can be threaded through the testing environment using custom structs in
+ * tandem with the (pre/post)state functions.
  */
-void print_args(struct instance *p) {
-  int a = unwrap_as_int(p[0].v);
-  int b = unwrap_as_int(p[1].v);
-  int c = unwrap_as_int(p[2].v);
+struct add_ctx {
+  int n;
+};
 
-  printf("%d, %d, %d\n", a, b, c);
+/*
+ * prestate and poststate functions allow the testing environment to be set up
+ * on a per-operation basis.
+ */
+void *prestate(void) {
+  struct add_ctx *ctx = malloc(sizeof(struct add_ctx));
+  ctx->n = 2;
+  return ctx;
 }
 
-int main() {
-  struct operation t = {
-      .name = "/example/test",
-      .fn = print_args,
-      .space = d,
-  };
+void poststate(void *ctx) { free(ctx); }
 
-  run_args(t);
+/*
+ * Here we define an operation by pulling the required instances from our input
+ * space.
+ */
+void op_add(struct instance *i, void *ctx) {
+  int a = unwrap_as_int(instance_get(i, "a"));
+  int b = unwrap_as_int(instance_get(i, "b"));
+  struct add_ctx *c = ctx;
+
+  int sum = a + b + c->n;
+}
+
+struct variant gen_double(void) {
+  return wrap((double)rand() / (double)RAND_MAX);
+}
+
+struct input_space rand_double_spaces[] = {
+    {.name = "a", .gen = gen_double},
+    {0},
+};
+
+void op_rand_double(struct instance *i, void *ctx) {
+  double d = unwrap_as_double(instance_get(i, "a"));
+
+  double x = 100 * d;
+}
+
+struct operation ops[] = {
+    {
+        .name = "add",          /* Name of the operation for output. */
+        .fn = op_add,           /* Function to be evaluated. */
+        .prestate = prestate,   /* Setup function. */
+        .poststate = poststate, /* Teardown function. */
+        .space = add_spaces,    /* Function parameters. */
+        .props = NULL,          /* Properties to be verified. */
+    },
+    {
+        .name = "rand_double",
+        .fn = op_rand_double,
+        .space = rand_double_spaces,
+    },
+    {0},
+};
+
+int main() {
+  struct specification spec = {.name = "test", .ops = ops};
+
+  run_spec(spec);
 
   return 0;
 }
