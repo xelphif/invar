@@ -29,9 +29,10 @@ struct variant _wrap_ptr(void *ptr) {
 
 #define instance_init(x, y) ((struct instance){.name = (x), .v = (y)})
 struct variant instance_get(struct instance *A, char *k) {
-  for (int i = 0; (A + i)->name; i++)
+  for (int i = 0; (A + i)->name; i++) {
     if (!strcmp((A + i)->name, k))
       return (A + i)->v;
+  }
 
   return (struct variant){0};
 }
@@ -71,8 +72,9 @@ struct report run(struct operation *op) {
   int n = 0;
 
   // Construct a lookup table for arguments and their instances.
-  for (n = 0; (curr = op->space + n)->name; n++)
+  for (n = 0; (curr = op->space + n)->name; n++) {
     array_push(instances, n, instance_init(curr->name, (struct variant){0}));
+  }
   array_push(instances, n, (struct instance){0});
 
   void *ctx = op->prestate ? op->prestate() : NULL;
@@ -81,8 +83,9 @@ struct report run(struct operation *op) {
 
   for (r.it = 0; r.it < 100; r.it++) {
 
-    for (int i = 0; (curr = op->space + i)->name; i++)
+    for (int i = 0; (curr = op->space + i)->name; i++) {
       instances[i].v = curr->gen ? curr->gen() : (struct variant){0};
+    }
 
     double elapsed = timer();
 
