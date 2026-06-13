@@ -71,7 +71,6 @@ struct instance {
 struct variant instance_get(struct instance *A, char *k);
 
 struct report {
-  unsigned int it;
   bool ok;
   struct {
     double mean;

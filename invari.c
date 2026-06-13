@@ -97,7 +97,7 @@ struct report run(struct property *prop) {
   struct report r = (struct report){0};
 
   // Execute function n times, recording the iteration in the report.
-  for (r.it = 0; r.it < 100; r.it++) {
+  for (int i = 0; i < 100; i++) {
 
     // Populate lookup table using output from generator functions.
     for (int i = 0; (curr = prop->space + i)->name; i++) {
@@ -112,7 +112,7 @@ struct report run(struct property *prop) {
     r.c[r.ok]++;
 
     elapsed = timer() - elapsed;
-    r.t.mean = mean(r.t.mean, elapsed, r.it);
+    r.t.mean = mean(r.t.mean, elapsed, i);
     minmax(&r.t.min, &r.t.max, elapsed);
   }
 
@@ -174,8 +174,8 @@ int run_spec(struct specification spec) {
 
     printf("  [%s] %s... %d out of %d passed, mean: %.9fs, range: [%.9fs, "
            "%.9fs]\n",
-           result_str[r.ok], (spec.props + i)->name, r.c[true], r.it, r.t.mean,
-           r.t.min, r.t.max);
+           result_str[r.ok], (spec.props + i)->name, r.c[true],
+           r.c[true] + r.c[false], r.t.mean, r.t.min, r.t.max);
   }
 
   return 0;
