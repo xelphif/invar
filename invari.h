@@ -82,24 +82,17 @@ struct report {
   double elapsed;
 };
 
-enum property_type {
-  PROP_PRECONDITION,
-  PROP_INVARIANT,
-  PROP_POSTCONDITION,
-};
-
-struct operation {
+struct property {
   char *name;
-  void (*fn)(struct instance *i, void *ctx);
+  bool (*predicate)(struct instance *i, void *ctx);
   void *(*prestate)(void);
   void (*poststate)(void *ctx);
   struct input_space *space;
-  bool (**props[3])(void *ctx);
 };
 
 struct specification {
   char *name;
-  struct operation *ops;
+  struct property *props;
 };
 
 // TEMP DECL to test ergo

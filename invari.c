@@ -67,40 +67,41 @@ void _array_grow(void **A, int n, size_t t) { *A = realloc(*A, n * t); }
 #define array_push(A, n, e) (array_grow((A), (n)), (A)[(n)] = (e))
 
 /*
- * Verify an operation using its properties.
+ * Verify a property
  */
-struct report run(struct operation *op) {
+struct report run(struct property *prop) {
 
   struct instance *instances = NULL;
   struct input_space *curr = NULL;
   int n = 0;
 
   // Construct a lookup table for arguments and their instances.
-  for (n = 0; (curr = op->space + n)->name; n++) {
+  for (n = 0; (curr = prop->space + n)->name; n++) {
     array_push(instances, n, instance_init(curr->name, (struct variant){0}));
   }
   array_push(instances, n, (struct instance){0});
 
-  void *ctx = op->prestate ? op->prestate() : NULL;
+  void *ctx = prop->prestate ? prop->prestate() : NULL;
 
   struct report r = (struct report){0};
 
   // Execute function n times, recording the iteration in the report.
   for (r.it = 0; r.it < 100; r.it++) {
 
-    for (int i = 0; (curr = op->space + i)->name; i++) {
+    // Populate lookup table using output from generator functions.
+    for (int i = 0; (curr = prop->space + i)->name; i++) {
       instances[i].v = curr->gen ? curr->gen() : (struct variant){0};
     }
 
     double elapsed = timer();
 
-    op->fn(instances, ctx);
+    prop->predicate(instances, ctx);
 
     r.elapsed = timer() - elapsed;
   }
 
-  if (op->poststate)
-    op->poststate(ctx);
+  if (prop->poststate)
+    prop->poststate(ctx);
 
   free(instances);
 
@@ -108,12 +109,12 @@ struct report run(struct operation *op) {
 }
 
 /*
- * Verify each operation in a specification and collect analytics.
+ * Verify each property in a specification and collect analytics.
  */
 int run_spec(struct specification spec) {
 
   printf("Verifying '%s' specification\n", spec.name);
-  for (int i = 0; (spec.ops + i)->name; i++) {
+  for (int i = 0; (spec.props + i)->name; i++) {
 
     int pipefd[2];
     if (pipe(pipefd))
@@ -124,7 +125,7 @@ int run_spec(struct specification spec) {
     if (cpid == 0) {
       close(pipefd[0]);
 
-      struct report r = run(spec.ops + i);
+      struct report r = run(spec.props + i);
 
       if (write(pipefd[1], &r, sizeof(struct report)) < 0)
         exit(EXIT_FAILURE);
@@ -159,7 +160,7 @@ int run_spec(struct specification spec) {
       r.r = RESULT_FAIL;
     }
 
-    printf("  [%s] %s... %.9fs\n", result_str[r.r], (spec.ops + i)->name,
+    printf("  [%s] %s... %.9fs\n", result_str[r.r], (spec.props + i)->name,
            r.r ? 0 : r.elapsed);
   }
 
