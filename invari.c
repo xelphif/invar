@@ -11,31 +11,6 @@
 
 #include "invari.h"
 
-#define XLOG_VISIBLE XLOG_TRACE
-
-enum xlog_level {
-  XLOG_TRACE,
-  XLOG_DEBUG,
-  XLOG_INFO,
-  XLOG_WARN,
-  XLOG_ERROR,
-  XLOG_FATAL,
-};
-
-static char *xlog_level_str[] = {
-    [XLOG_TRACE] = "TRACE", [XLOG_DEBUG] = "DEBUG", [XLOG_INFO] = "INFO",
-    [XLOG_WARN] = "WARN",   [XLOG_ERROR] = "ERROR", [XLOG_FATAL] = "FATAL",
-};
-
-// TODO: variadic / color
-void xlog(enum xlog_level level, char *msg) {
-
-  if (level < XLOG_VISIBLE)
-    return;
-
-  printf("[%s] %s", xlog_level_str[level], msg);
-}
-
 /*
  * Internal functions to create variants based on type.
  */
