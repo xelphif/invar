@@ -132,11 +132,14 @@ int run_spec(struct specification spec) {
 
     close(pipefd[1]);
 
+    struct report r;
+    if (read(pipefd[0], &r, sizeof(struct report)) == -1)
+      exit(EXIT_FAILURE);
+
+    close(pipefd[0]);
+
     int status;
     waitpid(cpid, &status, 0);
-
-    struct report r;
-    read(pipefd[0], &r, sizeof(struct report));
 
     if (WIFEXITED(status)) {
       r.r = WEXITSTATUS(status) ? RESULT_FAIL : RESULT_OK;
