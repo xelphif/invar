@@ -59,13 +59,6 @@ double timer(void) {
 }
 
 /*
- * Primitive "dynamic" array to construct instance array.
- */
-void _array_grow(void **A, int n, size_t t) { *A = realloc(*A, n * t); }
-#define array_grow(A, n) _array_grow((void **)&(A), (n) + 1, sizeof((A)[0]))
-#define array_push(A, n, e) (array_grow((A), (n)), (A)[(n)] = (e))
-
-/*
  * Timing statistics helper functions
  */
 static double mean(double old, double t, int n) {
@@ -76,6 +69,13 @@ static void minmax(double *min, double *max, double n) {
     *min = n;
   *max = *max < n ? n : *max;
 }
+
+/*
+ * Primitive "dynamic" array to construct instance array.
+ */
+void _array_grow(void **A, int n, size_t t) { *A = realloc(*A, n * t); }
+#define array_grow(A, n) _array_grow((void **)&(A), (n) + 1, sizeof((A)[0]))
+#define array_push(A, n, e) (array_grow((A), (n)), (A)[(n)] = (e))
 
 /*
  * Verify a property
