@@ -68,10 +68,12 @@ struct report run(struct operation *op) {
 
   struct instance *instances = NULL;
   struct input_space *curr = NULL;
+  int n = 0;
 
   // Construct a lookup table for arguments and their instances.
-  for (int i = 0; (curr = op->space + i)->name; i++)
-    array_push(instances, i, instance_init(curr->name, (struct variant){0}));
+  for (n = 0; (curr = op->space + n)->name; n++)
+    array_push(instances, n, instance_init(curr->name, (struct variant){0}));
+  array_push(instances, n, (struct instance){0});
 
   void *ctx = op->prestate ? op->prestate() : NULL;
 
