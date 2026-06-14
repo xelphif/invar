@@ -110,9 +110,10 @@ void result_print(struct property *prop, struct report *r, bool color) {
   printf("\n"
          "  %s%-4s%s %s%s%s\n"
          "       %d out of %d passed\n"
-         "       mean: %.9fs\n",
+         "       mean:  %.9fs\n"
+         "       range: [%.9fs, %.9fs]\n",
          accent, result_str[r->ok], reset, bold, prop->name, reset, passed,
-         passed + failed, r->t.mean);
+         passed + failed, r->t.mean, r->t.min, r->t.max);
 
   if (!r->n)
     return;
@@ -126,6 +127,21 @@ void result_print(struct property *prop, struct report *r, bool color) {
     variant_print(curr->v);
     printf("\n");
   }
+}
+
+void result_summary_print(int ac[2], bool color) {
+  int passed = ac[true];
+  int failed = ac[false];
+
+  char *reset = color ? "\e[0m" : "";
+  char *bold = color ? "\e[1m" : "";
+
+  printf("\n"
+         "  %s**** summary%s\n"
+         "       passed: %d\n"
+         "       failed: %d\n"
+         "       total:  %d\n",
+         bold, reset, passed, failed, passed + failed);
 }
 
 /*
@@ -194,6 +210,8 @@ struct report run(struct property *prop) {
  * Verify each property in a specification and collect analytics.
  */
 int run_spec(struct specification spec) {
+  int ac[2] = {0};
+  bool color = isatty(STDOUT_FILENO);
 
   printf("Verifying '%s' specification\n", spec.name);
   for (int i = 0; (spec.props + i)->name; i++) {
@@ -255,11 +273,14 @@ int run_spec(struct specification spec) {
     }
 
     r.ok = r.ac[false] == 0;
-    result_print(spec.props + i, &r, isatty(STDOUT_FILENO));
+    result_print(spec.props + i, &r, color);
+
+    ac[r.ok]++;
 
     if (r.ce)
       free(r.ce);
   }
 
+  result_summary_print(ac, color);
   return 0;
 };
