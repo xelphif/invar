@@ -127,7 +127,6 @@ static unsigned int hash(char *str) {
   return (unsigned int)((hash >> 32) ^ hash);
 }
 
-/* Grab random number from /dev/urandom, fall back to unix time. */
 static unsigned int nrand() {
   unsigned int r = 0;
   if (getrandom((void *)&r, sizeof(r), 0) < 0)
@@ -147,8 +146,11 @@ struct report {
   } t;
   int ac[2];
   int signal;
-  struct instance *ce;
-  int n;
+  struct {
+    int n;
+    struct instance *i;
+    int it;
+  } ce;
 };
 
 void report_record_result(struct report *r, bool ok, double elapsed, int n) {
@@ -159,11 +161,11 @@ void report_record_result(struct report *r, bool ok, double elapsed, int n) {
 }
 
 void report_record_ce(struct report *r, struct instance *instances, int n) {
-  r->n = n + 1; // We copy n + 1 elements in order to include the sentinel
-                // value we've already constructed.
-  size_t size = sizeof(struct instance) * r->n;
-  r->ce = malloc(size);
-  memcpy(r->ce, instances, size);
+  r->ce.n = n + 1; // We copy n + 1 elements in order to include the sentinel
+                   // value we've already constructed.
+  size_t size = sizeof(struct instance) * r->ce.n;
+  r->ce.i = malloc(size);
+  memcpy(r->ce.i, instances, size);
 }
 
 void report_process_status(struct report *r, int status) {
@@ -180,11 +182,11 @@ void report_read(struct report *r, int fd) {
     exit(EXIT_FAILURE);
 
   // Read if we have counterexamples waiting for us in the pipe.
-  if (!r->n)
+  if (!r->ce.n)
     return;
 
-  r->ce = malloc(sizeof(struct instance) * r->n);
-  if (read(fd, r->ce, sizeof(struct instance) * r->n) < 0)
+  r->ce.i = malloc(sizeof(struct instance) * r->ce.n);
+  if (read(fd, r->ce.i, sizeof(struct instance) * r->ce.n) < 0)
     exit(EXIT_FAILURE);
 };
 
@@ -192,16 +194,16 @@ void report_write(struct report *r, int fd) {
   if (write(fd, r, sizeof(struct report)) < 0)
     exit(EXIT_FAILURE);
 
-  if (!r->n)
+  if (!r->ce.n)
     return;
 
-  if (write(fd, r->ce, sizeof(struct instance) * r->n) < 0)
+  if (write(fd, r->ce.i, sizeof(struct instance) * r->ce.n) < 0)
     exit(EXIT_FAILURE);
 }
 
 void report_free(struct report *r) {
-  if (r->ce)
-    free(r->ce);
+  if (r->ce.i)
+    free(r->ce.i);
 }
 
 static char *result_str[] = {
@@ -209,58 +211,72 @@ static char *result_str[] = {
     [true] = "OK",
 };
 
-/* Show results of a property test. */
-void result_print(struct property *prop, struct report *r, bool color) {
+/*
+ * Output
+ */
+#define RESET "\e[0m"
+#define BOLD "\e[1m"
+#define RED "\e[1;31m"
+#define GREEN "\e[1;32m"
+void result_print_header(struct property *prop, struct report *r) {
   int passed = r->ac[true];
   int failed = r->ac[false];
   int total = passed + failed;
 
-  char *reset = color ? "\e[0m" : "";
-  char *bold = color ? "\e[1m" : "";
-  char *accent = color ? (!failed ? "\e[1;32m" : "\e[1;31m") : "";
-  char *signal = r->signal ? "\e[1;31m!\e[0m" : " ";
-
   printf("\n"
-         "%s %s%-4s%s %s%s%s\n"
+         "  %s%-4s%s %s%s%s\n"
          "       %d out of %d passed\n"
          "       seed:    0x%08x\n",
-         signal, accent, result_str[r->ok], reset, bold, prop->name, reset,
+         r->ok ? GREEN : RED, result_str[r->ok], RESET, BOLD, prop->name, RESET,
          passed, total, prop->seed);
+}
 
-  if (!r->signal)
-    printf("       mean:    %.9fs\n"
-           "       worst:   %.9fs\n",
-           r->t.mean, r->t.max);
-  else
-    printf("       signal:  iteration %d => %s\n", total, strsignal(r->signal));
+void result_print_timing(struct report *r) {
+  printf("       mean:    %.9fs\n"
+         "       worst:   %.9fs\n",
+         r->t.mean, r->t.max);
+}
 
-  if (r->ce) {
+#define SIGNAL RED "!" RESET
+void result_print_signal(struct report *r) {
+  printf("     " SIGNAL " signal:  %s\n", strsignal(r->signal));
+}
 
-    printf("\n"
-           "       counterexample\n");
+void result_print_ce(struct report *r) {
+  printf("\n"
+         "       counterexample\n");
 
-    struct instance *curr;
-    for (int i = 0; (curr = (r->ce + i))->name; i++) {
-      printf("         %s = ", curr->name);
-      variant_print(curr->v);
-      printf("\n");
-    }
+  struct instance *curr;
+  for (int i = 0; (curr = (r->ce.i + i))->name; i++) {
+    printf("         %s = ", curr->name);
+    variant_print(curr->v);
+    printf("\n");
   }
 }
 
-void result_summary_print(int ac[2], bool color) {
+void result_print(struct property *prop, struct report *r) {
+
+  result_print_header(prop, r);
+
+  if (!r->signal)
+    result_print_timing(r);
+  else
+    result_print_signal(r);
+
+  if (r->ce.i)
+    result_print_ce(r);
+}
+
+void result_summary_print(int ac[2]) {
   int passed = ac[true];
   int failed = ac[false];
-
-  char *reset = color ? "\e[0m" : "";
-  char *bold = color ? "\e[1m" : "";
 
   printf("\n"
          "  %s**** summary%s\n"
          "       passed: %d\n"
          "       failed: %d\n"
          "       total:  %d\n",
-         bold, reset, passed, failed, passed + failed);
+         BOLD, RESET, passed, failed, passed + failed);
 }
 
 /*
@@ -300,7 +316,7 @@ struct report run(struct property *prop) {
     elapsed = timer() - elapsed;
 
     // Record counterexample if this is our first failure.
-    if (prop->space && !ok && !r.ce) {
+    if (prop->space && !ok && !r.ce.i) {
       report_record_ce(&r, instances, n);
     }
 
@@ -367,7 +383,6 @@ struct report run_isolated(struct property *prop) {
  */
 int run_spec(struct specification spec) {
   int ac[2] = {0};
-  bool color = isatty(STDOUT_FILENO);
 
   // If no seed is set, generate a seed using a hash of the specification name
   // and bytes from /dev/urandom. If getrandom() fails, we use the current
@@ -389,12 +404,12 @@ int run_spec(struct specification spec) {
 
     struct report r = run_isolated(prop);
 
-    result_print(prop, &r, color);
+    result_print(prop, &r);
 
     ac[r.ok]++;
     report_free(&r);
   }
 
-  result_summary_print(ac, color);
+  result_summary_print(ac);
   return 0;
 };
