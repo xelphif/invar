@@ -27,6 +27,32 @@ struct variant _wrap_ptr(void *ptr) {
   return (struct variant){.T = VARIANT_PTR, .ptr = ptr};
 }
 
+/*
+ * Print variant properly.
+ */
+void variant_print(struct variant v) {
+  switch (v.T) {
+  case VARIANT_INT:
+    printf("%d", v.i);
+    break;
+
+  case VARIANT_DOUBLE:
+    printf("%f", v.d);
+    break;
+
+  case VARIANT_STR:
+    printf("\"%s\"", v.str);
+    break;
+
+  case VARIANT_PTR:
+    printf("%p", v.ptr);
+    break;
+
+  default:
+    printf("<none>");
+  }
+}
+
 #define instance_init(x, y) ((struct instance){.name = (x), .v = (y)})
 
 /*
@@ -86,9 +112,11 @@ void result_print(struct property *prop, struct report *r) {
   printf("\n"
          "       counterexample\n");
 
-  for (int i = 0; (r->ce + i)->name; i++) {
-    printf("         %s = %d\n", (r->ce + i)->name,
-           unwrap_as_int((r->ce + i)->v));
+  struct instance *curr;
+  for (int i = 0; (curr = (r->ce + i))->name; i++) {
+    printf("         %s = ", curr->name);
+    variant_print(curr->v);
+    printf("\n");
   }
 }
 
