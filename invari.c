@@ -11,6 +11,8 @@
 
 #include "invari.h"
 
+#define ITER_DEFAULT 100
+
 /*
  * Internal functions to create variants based on type.
  */
@@ -168,8 +170,10 @@ struct report run(struct property *prop) {
 
   struct report r = (struct report){0};
 
-  // Execute function n times, recording the iteration in the report.
-  for (int i = 0; i < 100; i++) {
+  // Evaluate the predicate the amount of times configured, recording the
+  // iteration in the report.
+  int iter = prop->iter ? prop->iter : ITER_DEFAULT;
+  for (int i = 0; i < iter; i++) {
     void *ctx = prop->prestate ? prop->prestate() : NULL;
 
     // Populate lookup table using output from generator functions.

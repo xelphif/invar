@@ -88,6 +88,7 @@ struct property {
   void *(*prestate)(void);
   void (*poststate)(void *ctx);
   struct input_space *space;
+  int iter;
 };
 
 struct specification {

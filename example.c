@@ -105,6 +105,7 @@ struct property props[] = {
                 {.name = "a", gen_int},
                 {0},
             },
+        .iter = 150,
     },
     {
         .name = "inverse",
