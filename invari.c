@@ -243,6 +243,7 @@ int run_spec(struct specification spec) {
 
     if (WIFSIGNALED(status)) {
       r.ok = false;
+      r.ac[r.ok]++;
     }
 
     result_print(spec.props + i, &r);
