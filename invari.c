@@ -79,6 +79,17 @@ void result_print(struct property *prop, struct report *r) {
          "       %d out of %d passed\n"
          "       mean: %.9fs\n",
          result_str[!failed], prop->name, passed, passed + failed, r->t.mean);
+
+  if (!r->n)
+    return;
+
+  printf("\n"
+         "       counterexample\n");
+
+  for (int i = 0; (r->ce + i)->name; i++) {
+    printf("         %s = %d\n", (r->ce + i)->name,
+           unwrap_as_int((r->ce + i)->v));
+  }
 }
 
 /*
@@ -121,6 +132,15 @@ struct report run(struct property *prop) {
     // Add result to accumulator.
     r.ac[r.ok]++;
 
+    // Record counterexample if this is our first failure.
+    if (!r.ok && r.ac[r.ok] == 1) {
+      for (int j = 0; j <= n + 1; j++) {
+        r.n = n + 1; // We push n + 1 elements in order to include the sentinel
+                     // value we've already constructed.
+        array_push(r.ce, j, instances[j]);
+      }
+    }
+
     elapsed = timer() - elapsed;
     r.t.mean = mean(r.t.mean, elapsed, i);
     minmax(&r.t.min, &r.t.max, elapsed);
@@ -156,7 +176,15 @@ int run_spec(struct specification spec) {
       if (write(pipefd[1], &r, sizeof(struct report)) < 0)
         exit(EXIT_FAILURE);
 
+      if (r.n) {
+        if (write(pipefd[1], r.ce, sizeof(struct instance) * r.n) < 0)
+          exit(EXIT_FAILURE);
+      }
+
       close(pipefd[1]);
+
+      if (r.ce)
+        free(r.ce);
 
       exit(EXIT_SUCCESS);
     }
@@ -173,6 +201,13 @@ int run_spec(struct specification spec) {
     if (read(pipefd[0], &r, sizeof(struct report)) < 0)
       exit(EXIT_FAILURE);
 
+    // Read if we have counterexamples waiting for us in the pipe.
+    if (r.n) {
+      r.ce = malloc(sizeof(struct instance) * r.n);
+      if (read(pipefd[0], r.ce, sizeof(struct instance) * r.n) < 0)
+        exit(EXIT_FAILURE);
+    }
+
     close(pipefd[0]);
 
     int status;
@@ -183,6 +218,9 @@ int run_spec(struct specification spec) {
     }
 
     result_print(spec.props + i, &r);
+
+    if (r.ce)
+      free(r.ce);
   }
 
   return 0;

@@ -78,6 +78,8 @@ struct report {
     double max;
   } t;
   int ac[2];
+  struct instance *ce;
+  int n;
 };
 
 struct property {
