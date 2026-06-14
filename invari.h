@@ -78,6 +78,7 @@ struct report {
     double max;
   } t;
   int ac[2];
+  int signal;
   struct instance *ce;
   int n;
 };

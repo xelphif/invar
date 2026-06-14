@@ -121,31 +121,38 @@ static unsigned int hash(char *str) {
 void result_print(struct property *prop, struct report *r, bool color) {
   int passed = r->ac[true];
   int failed = r->ac[false];
+  int total = passed + failed;
 
   char *reset = color ? "\e[0m" : "";
   char *bold = color ? "\e[1m" : "";
   char *accent = color ? (!failed ? "\e[1;32m" : "\e[1;31m") : "";
+  char *signal = r->signal ? "\e[1;31m!\e[0m" : " ";
 
   printf("\n"
-         "  %s%-4s%s %s%s%s\n"
+         "%s %s%-4s%s %s%s%s\n"
          "       %d out of %d passed\n"
-         "       seed:    0x%08x\n"
-         "       mean:    %.9fs\n"
-         "       range:   [%.9fs, %.9fs]\n",
-         accent, result_str[r->ok], reset, bold, prop->name, reset, passed,
-         passed + failed, prop->seed, r->t.mean, r->t.min, r->t.max);
+         "       seed:    0x%08x\n",
+         signal, accent, result_str[r->ok], reset, bold, prop->name, reset,
+         passed, total, prop->seed);
 
-  if (!r->n)
-    return;
+  if (!r->signal)
+    printf("       mean:    %.9f\n"
+           "       range:  [%.9f, %.9f]\n",
+           r->t.mean, r->t.min, r->t.max);
+  else
+    printf("       signal:  iteration %d => %s\n", total, strsignal(r->signal));
 
-  printf("\n"
-         "       counterexample\n");
+  if (r->ce) {
 
-  struct instance *curr;
-  for (int i = 0; (curr = (r->ce + i))->name; i++) {
-    printf("         %s = ", curr->name);
-    variant_print(curr->v);
-    printf("\n");
+    printf("\n"
+           "       counterexample\n");
+
+    struct instance *curr;
+    for (int i = 0; (curr = (r->ce + i))->name; i++) {
+      printf("         %s = ", curr->name);
+      variant_print(curr->v);
+      printf("\n");
+    }
   }
 }
 
@@ -311,8 +318,8 @@ int run_spec(struct specification spec) {
     waitpid(cpid, &status, 0);
 
     if (WIFSIGNALED(status)) {
-      r.ok = false;
-      r.ac[r.ok]++;
+      r.ac[false]++;
+      r.signal = WTERMSIG(status);
     }
 
     r.ok = r.ac[false] == 0;

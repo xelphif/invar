@@ -74,6 +74,11 @@ bool add_less_than_50(struct instance *i, void *ctx) {
   return a < 50;
 }
 
+bool add_crash_example(struct instance *i, void *ctx) {
+  abort();
+  return true;
+}
+
 struct property props[] = {
     {
         .name = "commutativity", /* Name of the property for reporting. */
@@ -125,6 +130,11 @@ struct property props[] = {
                 {0},
             },
         .seed = 0x0068663b,
+    },
+    {
+        .name = "crash_example",
+        .predicate = add_crash_example,
+        .space = (struct input_space[]){{0}},
     },
     {0},
 };
