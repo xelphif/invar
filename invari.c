@@ -208,6 +208,8 @@ struct report run(struct property *prop) {
 
     r.ok = prop->predicate(instances, ctx);
 
+    elapsed = timer() - elapsed;
+
     // Add result to accumulator.
     r.ac[r.ok]++;
 
@@ -220,7 +222,7 @@ struct report run(struct property *prop) {
       memcpy(r.ce, instances, size);
     }
 
-    elapsed = timer() - elapsed;
+    // Record time statistics.
     r.t.mean = mean(r.t.mean, elapsed, i);
     r.t.max = max(r.t.max, elapsed);
 
