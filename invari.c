@@ -184,10 +184,12 @@ struct report run(struct property *prop) {
   int n = 0;
 
   // Construct a lookup table for arguments and their instances.
-  for (n = 0; (curr = prop->space + n)->name; n++) {
-    array_push(instances, n, instance_init(curr->name, (struct variant){0}));
+  if (prop->space) {
+    for (n = 0; (curr = prop->space + n)->name; n++) {
+      array_push(instances, n, instance_init(curr->name, (struct variant){0}));
+    }
+    array_push(instances, n, (struct instance){0});
   }
-  array_push(instances, n, (struct instance){0});
 
   struct report r = (struct report){0};
 
@@ -200,8 +202,10 @@ struct report run(struct property *prop) {
     void *ctx = prop->prestate ? prop->prestate() : NULL;
 
     // Populate lookup table using output from generator functions.
-    for (int i = 0; (curr = prop->space + i)->name; i++) {
-      instances[i].v = curr->gen ? curr->gen() : (struct variant){0};
+    if (prop->space) {
+      for (int i = 0; (curr = prop->space + i)->name; i++) {
+        instances[i].v = curr->gen ? curr->gen() : (struct variant){0};
+      }
     }
 
     double elapsed = timer();
@@ -214,7 +218,7 @@ struct report run(struct property *prop) {
     r.ac[r.ok]++;
 
     // Record counterexample if this is our first failure.
-    if (!r.ok && r.ac[r.ok] == 1) {
+    if (prop->space && !r.ok && r.ac[r.ok] == 1) {
       r.n = n + 1; // We copy n + 1 elements in order to include the sentinel
                    // value we've already constructed.
       size_t size = sizeof(struct instance) * r.n;
@@ -230,7 +234,8 @@ struct report run(struct property *prop) {
       prop->poststate(ctx);
   }
 
-  free(instances);
+  if (instances)
+    free(instances);
 
   return r;
 }
