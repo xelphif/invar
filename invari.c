@@ -218,7 +218,8 @@ int run_spec(struct specification spec) {
   bool color = isatty(STDOUT_FILENO);
 
   printf("Verifying '%s' specification\n", spec.name);
-  for (int i = 0; (spec.props + i)->name; i++) {
+  struct property *prop = NULL;
+  for (int i = 0; (prop = spec.props + i)->name; i++) {
 
     int pipefd[2];
     if (pipe(pipefd))
@@ -229,7 +230,7 @@ int run_spec(struct specification spec) {
     if (cpid == 0) {
       close(pipefd[0]);
 
-      struct report r = run(spec.props + i);
+      struct report r = run(prop);
 
       if (write(pipefd[1], &r, sizeof(struct report)) < 0)
         exit(EXIT_FAILURE);
@@ -277,7 +278,7 @@ int run_spec(struct specification spec) {
     }
 
     r.ok = r.ac[false] == 0;
-    result_print(spec.props + i, &r, color);
+    result_print(prop, &r, color);
 
     ac[r.ok]++;
 
