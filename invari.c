@@ -71,8 +71,8 @@ static void minmax(double *min, double *max, double n) {
 }
 
 void result_print(struct property *prop, struct report *r) {
-  int passed = r->c[true];
-  int failed = r->c[false];
+  int passed = r->ac[true];
+  int failed = r->ac[false];
 
   printf("\n"
          "  %-4s %s\n"
@@ -119,7 +119,7 @@ struct report run(struct property *prop) {
     r.ok = prop->predicate(instances, ctx);
 
     // Add result to accumulator.
-    r.c[r.ok]++;
+    r.ac[r.ok]++;
 
     elapsed = timer() - elapsed;
     r.t.mean = mean(r.t.mean, elapsed, i);

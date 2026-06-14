@@ -77,7 +77,7 @@ struct report {
     double min;
     double max;
   } t;
-  int c[2];
+  int ac[2];
 };
 
 struct property {
