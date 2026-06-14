@@ -186,11 +186,11 @@ struct report run(struct property *prop) {
 
     // Record counterexample if this is our first failure.
     if (!r.ok && r.ac[r.ok] == 1) {
-      for (int j = 0; j <= n + 1; j++) {
-        r.n = n + 1; // We push n + 1 elements in order to include the sentinel
-                     // value we've already constructed.
-        array_push(r.ce, j, instances[j]);
-      }
+      r.n = n + 1; // We copy n + 1 elements in order to include the sentinel
+                   // value we've already constructed.
+      size_t size = sizeof(struct instance) * r.n;
+      r.ce = malloc(size);
+      memcpy(r.ce, instances, size);
     }
 
     elapsed = timer() - elapsed;
