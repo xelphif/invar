@@ -96,15 +96,23 @@ static void minmax(double *min, double *max, double n) {
   *max = *max < n ? n : *max;
 }
 
-void result_print(struct property *prop, struct report *r) {
+/*
+ * Show results of a property test.
+ */
+void result_print(struct property *prop, struct report *r, bool color) {
   int passed = r->ac[true];
   int failed = r->ac[false];
 
+  char *reset = color ? "\e[0m" : "";
+  char *bold = color ? "\e[1m" : "";
+  char *accent = color ? (!failed ? "\e[1;32m" : "\e[1;31m") : "";
+
   printf("\n"
-         "  %-4s %s\n"
+         "  %s%-4s%s %s%s%s\n"
          "       %d out of %d passed\n"
          "       mean: %.9fs\n",
-         result_str[!failed], prop->name, passed, passed + failed, r->t.mean);
+         accent, result_str[r->ok], reset, bold, prop->name, reset, passed,
+         passed + failed, r->t.mean);
 
   if (!r->n)
     return;
@@ -246,7 +254,8 @@ int run_spec(struct specification spec) {
       r.ac[r.ok]++;
     }
 
-    result_print(spec.props + i, &r);
+    r.ok = r.ac[false] == 0;
+    result_print(spec.props + i, &r, isatty(STDOUT_FILENO));
 
     if (r.ce)
       free(r.ce);
