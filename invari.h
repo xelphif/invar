@@ -5,6 +5,18 @@
 #include <stdbool.h>
 
 /*
+ * Convenience macros.
+ */
+#define PREDICATE(p) bool p(struct instance *i, void *ctx)
+
+#define SPACE (struct input_space[])
+
+#define GEN(name, expr)                                                        \
+  struct variant name(void) {                                                  \
+    return wrap(expr);                                                         \
+  }
+
+/*
  * Generic container for function parameters.
  */
 enum variant_type {
@@ -52,6 +64,11 @@ struct variant _wrap_ptr(void *);
 #define unwrap_as_double(v) (assert((v).T == VARIANT_DOUBLE), (v).d)
 #define unwrap_as_str(v) (assert((v).T == VARIANT_STR), (v).str)
 #define unwrap_as_ptr(v) (assert((v).T == VARIANT_PTR), (v).ptr)
+
+#define given_int(i, k) (unwrap_as_int(instance_get((i), (k))))
+#define given_double(i, k) (unwrap_as_double(instance_get((i), (k))))
+#define given_str(i, k) (unwrap_as_str(instance_get((i), (k))))
+#define given_ptr(i, k) (unwrap_as_ptr(instance_get((i), (k))))
 
 /*
  * Container for all possible values a test paramter can take on.

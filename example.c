@@ -3,10 +3,6 @@
 
 #include "invari.h"
 
-struct variant gen_int(void) {
-  return wrap(rand() % 100);
-}
-
 int add(int a, int b) { return a + b; }
 
 /*
@@ -29,52 +25,53 @@ void *prestate(void) {
 
 void poststate(void *ctx) { free(ctx); }
 
-struct variant gen_double(void) {
-  return wrap((double)rand() / (double)RAND_MAX);
-}
+/*
+ * Generator definitions.
+ */
+GEN(gen_int, rand() % 100)
+GEN(gen_double, (double)rand() / (double)RAND_MAX)
 
-bool add_commutativity(struct instance *i, void *ctx) {
+/*
+ * Predicate definitions.
+ */
+PREDICATE(add_commutativity) {
 
-  /*
-   * Data can be retrieved from the variant look out table.
-   */
-  int a = unwrap_as_int(instance_get(i, "a"));
+  // Data can be retrieved from the variant look out table.
+  int a = given_int(i, "a");
 
-  /*
-   * Or through the ctx pointer we set up in our prestate.
-   */
+  // Or through the ctx pointer we set up in our prestate.
   struct add_ctx *c = ctx;
 
   return add(a, c->n) == add(c->n, a);
 }
 
-bool add_associativity(struct instance *i, void *ctx) {
-  int a = unwrap_as_int(instance_get(i, "a"));
-  int b = unwrap_as_int(instance_get(i, "b"));
-  int c = unwrap_as_int(instance_get(i, "c"));
+PREDICATE(add_associativity) {
+  int a = given_int(i, "a");
+  int b = given_int(i, "b");
+  int c = given_int(i, "c");
 
   return add(add(a, b), c) == add(a, add(b, c));
 }
 
-bool add_identity(struct instance *i, void *ctx) {
-  int a = unwrap_as_int(instance_get(i, "a"));
+PREDICATE(add_identity) {
+  int a = given_int(i, "a");
 
   return add(a, 0) == a;
 }
 
-bool add_inverse(struct instance *i, void *ctx) {
-  int a = unwrap_as_int(instance_get(i, "a"));
+PREDICATE(add_inverse) {
+  int a = given_int(i, "a");
 
   return add(a, -a) == 0;
 }
 
-bool add_less_than_50(struct instance *i, void *ctx) {
-  int a = unwrap_as_int(instance_get(i, "a"));
+PREDICATE(add_less_than_50) {
+  int a = given_int(i, "a");
 
   return a < 50;
 }
 
-bool add_crash_example(struct instance *i, void *ctx) {
+PREDICATE(add_crash_example) {
   abort();
   return true;
 }
@@ -83,19 +80,16 @@ struct property props[] = {
     {
         .name = "commutativity", /* Name of the property for reporting. */
         .predicate = add_commutativity, /* Predicate to be tested. */
-        .space =
-            (struct input_space[]){
-                {.name = "a", gen_int},
-                {0},
-            },                  /* Function parameters. */
-        .prestate = prestate,   /* Setup function. */
-        .poststate = poststate, /* Teardown function. */
+        .prestate = prestate,           /* Setup function. */
+        .poststate = poststate,         /* Teardown function. */
+        .space = SPACE{{.name = "a", gen_int}, {0}},
+
     },
     {
         .name = "associativity",
         .predicate = add_associativity,
         .space =
-            (struct input_space[]){
+            SPACE{
                 {.name = "a", gen_int},
                 {.name = "b", gen_int},
                 {.name = "c", gen_int},
@@ -105,36 +99,24 @@ struct property props[] = {
     {
         .name = "identity",
         .predicate = add_identity,
-        .space =
-            (struct input_space[]){
-                {.name = "a", gen_int},
-                {0},
-            },
+        .space = SPACE{{.name = "a", gen_int}, {0}},
         .iter = 150,
     },
     {
         .name = "inverse",
         .predicate = add_inverse,
-        .space =
-            (struct input_space[]){
-                {.name = "a", gen_int},
-                {0},
-            },
+        .space = SPACE{{.name = "a", gen_int}, {0}},
     },
     {
         .name = "less_than_50",
         .predicate = add_less_than_50,
-        .space =
-            (struct input_space[]){
-                {.name = "a", gen_int},
-                {0},
-            },
+        .space = SPACE{{.name = "a", gen_int}, {0}},
         .seed = 0x0068663b,
     },
     {
         .name = "crash_example",
         .predicate = add_crash_example,
-        .space = (struct input_space[]){{0}},
+        .space = SPACE{{.name = "a", gen_int}, {0}},
     },
     {0},
 };
