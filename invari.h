@@ -74,7 +74,6 @@ struct report {
   bool ok;
   struct {
     double mean;
-    double min;
     double max;
   } t;
   int ac[2];

@@ -93,11 +93,7 @@ double timer(void) {
 static double mean(double old, double t, int n) {
   return ((old * n) + t) / (n + 1);
 }
-static void minmax(double *min, double *max, double n) {
-  if (*min == 0.0 || *min > n)
-    *min = n;
-  *max = *max < n ? n : *max;
-}
+static inline double max(double x, double y) { return x > y ? x : y; }
 
 /*
  * FNV-1a hashing algorithm.
@@ -136,9 +132,9 @@ void result_print(struct property *prop, struct report *r, bool color) {
          passed, total, prop->seed);
 
   if (!r->signal)
-    printf("       mean:    %.9f\n"
-           "       range:  [%.9f, %.9f]\n",
-           r->t.mean, r->t.min, r->t.max);
+    printf("       mean:    %.9fs\n"
+           "       worst:   %.9fs\n",
+           r->t.mean, r->t.max);
   else
     printf("       signal:  iteration %d => %s\n", total, strsignal(r->signal));
 
@@ -226,7 +222,7 @@ struct report run(struct property *prop) {
 
     elapsed = timer() - elapsed;
     r.t.mean = mean(r.t.mean, elapsed, i);
-    minmax(&r.t.min, &r.t.max, elapsed);
+    r.t.max = max(r.t.max, elapsed);
 
     if (prop->poststate)
       prop->poststate(ctx);
