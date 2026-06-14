@@ -43,7 +43,7 @@ struct variant instance_get(struct instance *A, char *k) {
 
 static char *result_str[] = {
     [false] = "FAIL",
-    [true] = " OK ",
+    [true] = "OK",
 };
 
 /*
@@ -68,6 +68,17 @@ static void minmax(double *min, double *max, double n) {
   if (*min == 0.0 || *min > n)
     *min = n;
   *max = *max < n ? n : *max;
+}
+
+void result_print(struct property *prop, struct report *r) {
+  int passed = r->c[true];
+  int failed = r->c[false];
+
+  printf("\n"
+         "  %-4s %s\n"
+         "       %d out of %d passed\n"
+         "       mean: %.9fs\n",
+         result_str[!failed], prop->name, passed, passed + failed, r->t.mean);
 }
 
 /*
@@ -171,10 +182,7 @@ int run_spec(struct specification spec) {
       r.ok = false;
     }
 
-    printf("  [%s] %s... %d out of %d passed, mean: %.9fs, range: [%.9fs, "
-           "%.9fs]\n",
-           result_str[!r.c[false]], (spec.props + i)->name, r.c[true],
-           r.c[true] + r.c[false], r.t.mean, r.t.min, r.t.max);
+    result_print(spec.props + i, &r);
   }
 
   return 0;
