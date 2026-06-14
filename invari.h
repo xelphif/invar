@@ -17,7 +17,7 @@
   }
 
 /*
- * Generic container for function parameters.
+ * variant: generic container for function parameters.
  */
 enum variant_type {
   VARIANT_NONE,
@@ -37,9 +37,6 @@ struct variant {
   };
 };
 
-/*
- * Type specific wrap functions for the generic wrapper macro.
- */
 struct variant _wrap_int(int i);
 struct variant _wrap_double(double d);
 struct variant _wrap_str(char *);
@@ -52,9 +49,6 @@ struct variant _wrap_ptr(void *);
              char*: _wrap_str,                                                 \
              void*: _wrap_ptr)(x)
 
-/*
- * Explicit wrap macros for static declaration.
- */
 #define wrap_i(x) ((struct variant){.T = VARIANT_INT, .i = (x)})
 #define wrap_d(x) ((struct variant){.T = VARIANT_DOUBLE, .d = (x)})
 #define wrap_str(x) ((struct variant){.T = VARIANT_STR, .str = (x)})
@@ -65,21 +59,17 @@ struct variant _wrap_ptr(void *);
 #define unwrap_as_str(v) (assert((v).T == VARIANT_STR), (v).str)
 #define unwrap_as_ptr(v) (assert((v).T == VARIANT_PTR), (v).ptr)
 
-#define given_int(i, k) (unwrap_as_int(instance_get((i), (k))))
-#define given_double(i, k) (unwrap_as_double(instance_get((i), (k))))
-#define given_str(i, k) (unwrap_as_str(instance_get((i), (k))))
-#define given_ptr(i, k) (unwrap_as_ptr(instance_get((i), (k))))
-
 /*
- * Container for all possible values a test paramter can take on.
- *
- * TODO: implement sequences and wild card inputs.
+ * input space: container for all input generators accessible to a predicate.
  */
 struct input_space {
   char *name;
   struct variant (*gen)(void);
 };
 
+/*
+ * instance: entry in input lookup table provided to predicate.
+ */
 struct instance {
   char *name;
   struct variant v;
@@ -87,18 +77,14 @@ struct instance {
 
 struct variant instance_get(struct instance *A, char *k);
 
-struct report {
-  bool ok;
-  struct {
-    double mean;
-    double max;
-  } t;
-  int ac[2];
-  int signal;
-  struct instance *ce;
-  int n;
-};
+#define given_int(i, k) (unwrap_as_int(instance_get((i), (k))))
+#define given_double(i, k) (unwrap_as_double(instance_get((i), (k))))
+#define given_str(i, k) (unwrap_as_str(instance_get((i), (k))))
+#define given_ptr(i, k) (unwrap_as_ptr(instance_get((i), (k))))
 
+/*
+ * property: system under test.
+ */
 struct property {
   char *name;
   bool (*predicate)(struct instance *i, void *ctx);
@@ -109,13 +95,15 @@ struct property {
   int iter;
 };
 
+/*
+ * specification: full definition of the properties of an object.
+ */
 struct specification {
   char *name;
   struct property *props;
   unsigned int seed;
 };
 
-// TEMP DECL to test ergo
 int run_spec(struct specification spec);
 
 #endif
