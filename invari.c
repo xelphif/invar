@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/random.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -99,6 +100,22 @@ static void minmax(double *min, double *max, double n) {
 }
 
 /*
+ * FNV-1a hashing algorithm.
+ * Further reading: https://en.wikipedia.org/wiki/Fowler-Noll-Vo_hash_function
+ */
+static unsigned int hash(char *str) {
+  unsigned long hash = 0xcbf29ce484222325; // FNV offset basis
+  unsigned long prime = 0x100000001b3;     // FNV prime
+
+  for (int i = 0; str[i] != '\0'; i++) {
+    hash ^= str[i];
+    hash *= prime;
+  }
+
+  return (unsigned int)((hash >> 32) ^ hash);
+}
+
+/*
  * Show results of a property test.
  */
 void result_print(struct property *prop, struct report *r, bool color) {
@@ -112,10 +129,11 @@ void result_print(struct property *prop, struct report *r, bool color) {
   printf("\n"
          "  %s%-4s%s %s%s%s\n"
          "       %d out of %d passed\n"
-         "       mean:  %.9fs\n"
-         "       range: [%.9fs, %.9fs]\n",
+         "       seed:    0x%08x\n"
+         "       mean:    %.9fs\n"
+         "       range:   [%.9fs, %.9fs]\n",
          accent, result_str[r->ok], reset, bold, prop->name, reset, passed,
-         passed + failed, r->t.mean, r->t.min, r->t.max);
+         passed + failed, prop->seed, r->t.mean, r->t.min, r->t.max);
 
   if (!r->n)
     return;
@@ -170,6 +188,8 @@ struct report run(struct property *prop) {
 
   struct report r = (struct report){0};
 
+  srand(prop->seed);
+
   // Evaluate the predicate the amount of times configured, recording the
   // iteration in the report.
   int iter = prop->iter ? prop->iter : ITER_DEFAULT;
@@ -217,9 +237,27 @@ int run_spec(struct specification spec) {
   int ac[2] = {0};
   bool color = isatty(STDOUT_FILENO);
 
-  printf("Verifying '%s' specification\n", spec.name);
+  // If no seed is set, generate a seed using a hash of the specification name
+  // and bytes from /dev/urandom. If getrandom() fails, we use the current time
+  // instead.
+  if (!spec.seed) {
+    unsigned int rand = 0;
+    if (getrandom((void *)&rand, sizeof(rand), 0) < 0)
+      rand = time(NULL);
+    spec.seed = rand ^ hash(spec.name);
+  }
+
+  printf("Verifying '%s' specification with seed 0x%08x\n", spec.name,
+         spec.seed);
+
   struct property *prop = NULL;
   for (int i = 0; (prop = spec.props + i)->name; i++) {
+
+    // Derive per property seed based on spec seed. Respect explicitly set
+    // seeds.
+    if (!prop->seed) {
+      prop->seed = spec.seed ^ hash(prop->name);
+    }
 
     int pipefd[2];
     if (pipe(pipefd))

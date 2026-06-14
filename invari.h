@@ -88,12 +88,14 @@ struct property {
   void *(*prestate)(void);
   void (*poststate)(void *ctx);
   struct input_space *space;
+  unsigned int seed;
   int iter;
 };
 
 struct specification {
   char *name;
   struct property *props;
+  unsigned int seed;
 };
 
 // TEMP DECL to test ergo

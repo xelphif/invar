@@ -124,6 +124,7 @@ struct property props[] = {
                 {.name = "a", gen_int},
                 {0},
             },
+        .seed = 0x0068663b,
     },
     {0},
 };
