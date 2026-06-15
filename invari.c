@@ -302,7 +302,7 @@ struct report run(struct property *prop) {
   // Evaluate the predicate the amount of times configured, recording the
   // iteration in the report.
   bool ok = false;
-  int iter = prop->iter ? prop->iter : ITER_DEFAULT;
+  int iter = prop->iterations ? prop->iterations : ITER_DEFAULT;
   for (int i = 0; i < iter; i++) {
     void *ctx = prop->prestate ? prop->prestate() : NULL;
 

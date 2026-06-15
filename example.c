@@ -100,7 +100,7 @@ struct property props[] = {
         .name = "identity",
         .predicate = add_identity,
         .space = SPACE{{.name = "a", gen_int}, {0}},
-        .iter = 150,
+        .iterations = 150,
     },
     {
         .name = "inverse",

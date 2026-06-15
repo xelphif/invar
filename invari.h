@@ -92,7 +92,7 @@ struct property {
   void (*poststate)(void *ctx);
   struct input_space *space;
   unsigned int seed;
-  int iter;
+  int iterations;
 };
 
 /*
