@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "invari.h"
 
@@ -28,8 +29,10 @@ void poststate(void *ctx) { free(ctx); }
 /*
  * Generator definitions.
  */
+
 GEN(gen_int, rand() % 100)
 GEN(gen_double, (double)rand() / (double)RAND_MAX)
+GEN(gen_str, "Hello, world!");
 
 /*
  * Predicate definitions.
@@ -110,7 +113,12 @@ struct property props[] = {
     {
         .name = "less_than_50",
         .predicate = add_less_than_50,
-        .space = SPACE{{.name = "a", gen_int}, {0}},
+        .space =
+            SPACE{
+                {.name = "a", gen_int},
+                {.name = "str", gen_str},
+                {0},
+            },
         .seed = 0x0068663b,
     },
     {

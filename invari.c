@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/random.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -30,23 +31,54 @@ struct variant _wrap_ptr(void *ptr) {
   return (struct variant){.T = VARIANT_PTR, .ptr = ptr};
 }
 
-/* Default printing behavior for each variant type. */
-void variant_print(struct variant v) {
-  switch (v.T) {
+int variant_copy(struct arena *a, struct variant *v) {
+  switch (v->T) {
+    // We don't copy integers or doubles since they are part of the struct.
   case VARIANT_INT:
-    printf("%d", v.i);
+  case VARIANT_DOUBLE:
+  case VARIANT_NONE:
+    return 1;
+
+    // Default behavior for strings is to deep copy if it exists.
+  case VARIANT_STR:
+
+    if (!v->str)
+      return 1;
+
+    size_t n = strlen(v->str) + 1;
+    char *ptr = aalloc(a, n);
+
+    assert(ptr);
+
+    memcpy(ptr, v->str, n);
+    v->str = ptr;
+
+    return 1;
+
+  case VARIANT_PTR:
+    return 0;
+  }
+
+  return 1;
+}
+
+/* Default printing behavior for each variant type. */
+void variant_print(struct variant *v) {
+  switch (v->T) {
+  case VARIANT_INT:
+    printf("%d", v->i);
     break;
 
   case VARIANT_DOUBLE:
-    printf("%f", v.d);
+    printf("%f", v->d);
     break;
 
   case VARIANT_STR:
-    printf("\"%s\"", v.str);
+    printf("\"%s\"", v->str);
     break;
 
   case VARIANT_PTR:
-    printf("%p", v.ptr);
+    printf("%p", v->ptr);
     break;
 
   default:
@@ -93,6 +125,13 @@ struct variant instance_get(struct instance *A, char *k) {
   return (struct variant){0};
 }
 
+int instance_copy(struct arena *a, struct instance *i) {
+  if (i->copy)
+    return i->copy(a, &i->v);
+
+  return variant_copy(a, &i->v);
+}
+
 /*
  * utilities
  */
@@ -136,6 +175,19 @@ static unsigned int nrand() {
 }
 
 /*
+ * Bump allocate in arena.
+ */
+void *aalloc(struct arena *a, size_t size) {
+  if (a->off + size > a->cap)
+    return NULL;
+
+  void *ptr = a->base + a->off;
+  a->off += size;
+
+  return ptr;
+}
+
+/*
  * report: information to output upon test completion.
  */
 struct report {
@@ -160,12 +212,17 @@ void report_record_result(struct report *r, bool ok, double elapsed, int n) {
   r->t.max = max(r->t.max, elapsed);
 }
 
-void report_record_ce(struct report *r, struct instance *instances, int n) {
+void report_record_ce(struct arena *a, struct report *r,
+                      struct instance *instances, int n) {
   r->ce.n = n + 1; // We copy n + 1 elements in order to include the sentinel
                    // value we've already constructed.
   size_t size = sizeof(struct instance) * r->ce.n;
-  r->ce.i = malloc(size);
+  r->ce.i = aalloc(a, size);
   memcpy(r->ce.i, instances, size);
+
+  for (int i = 0; i <= n; i++) {
+    instance_copy(a, r->ce.i + i);
+  }
 }
 
 void report_process_status(struct report *r, int status) {
@@ -173,39 +230,9 @@ void report_process_status(struct report *r, int status) {
   if (!WIFSIGNALED(status))
     return;
 
+  r->ok = false;
   r->ac[false]++;
   r->signal = WTERMSIG(status);
-}
-
-int report_read(struct report *r, int fd) {
-  if (read(fd, r, sizeof(struct report)) < 0)
-    return 0;
-
-  // Read if we have counterexamples waiting for us in the pipe.
-  if (r->ce.i) {
-    r->ce.i = malloc(sizeof(struct instance) * r->ce.n);
-    if (read(fd, r->ce.i, sizeof(struct instance) * r->ce.n) < 0)
-      return 0;
-  }
-
-  return 1;
-};
-
-int report_write(struct report *r, int fd) {
-  if (write(fd, r, sizeof(struct report)) < 0)
-    return 0;
-
-  if (r->ce.i) {
-    if (write(fd, r->ce.i, sizeof(struct instance) * r->ce.n) < 0)
-      return 0;
-  }
-
-  return 1;
-}
-
-void report_free(struct report *r) {
-  if (r->ce.i)
-    free(r->ce.i);
 }
 
 static char *result_str[] = {
@@ -251,7 +278,7 @@ void result_print_ce(struct report *r) {
   struct instance *curr;
   for (int i = 0; (curr = (r->ce.i + i))->name; i++) {
     printf("         %s = ", curr->name);
-    variant_print(curr->v);
+    variant_print(&curr->v);
     printf("\n");
   }
 }
@@ -281,21 +308,29 @@ void result_summary_print(int ac[2]) {
          BOLD, RESET, passed, failed, passed + failed);
 }
 
+struct shared {
+  struct report r;
+  struct arena a;
+};
+
 /*
  * Verify a property.
  */
-struct report run(struct property *prop) {
+void run(struct property *prop, struct shared *shm) {
 
   struct instance *instances = NULL;
   struct input_space *entry = NULL;
   int n = 0;
+
+  struct report *r = &shm->r;
+  struct arena *a = &shm->a;
 
   // Construct a lookup table for arguments and their instances.
   if (prop->space) {
     n = instance_table_init(&instances, prop->space);
   }
 
-  struct report r = {.ok = true};
+  *r = (struct report){.ok = true};
 
   srand(prop->seed);
 
@@ -318,11 +353,11 @@ struct report run(struct property *prop) {
     elapsed = timer() - elapsed;
 
     // Record counterexample if this is our first failure.
-    if (prop->space && !ok && !r.ce.i) {
-      report_record_ce(&r, instances, n);
+    if (prop->space && !ok && !r->ce.i) {
+      report_record_ce(a, r, instances, n);
     }
 
-    report_record_result(&r, ok, elapsed, i);
+    report_record_result(r, ok, elapsed, i);
 
     if (prop->poststate)
       prop->poststate(ctx);
@@ -330,56 +365,29 @@ struct report run(struct property *prop) {
 
   if (instances)
     free(instances);
-
-  return r;
 }
 
 /*
  * Execute property test in separate process.
  */
-struct report run_isolated(struct property *prop) {
-
-  int pipefd[2];
-  if (pipe(pipefd))
-    exit(EXIT_FAILURE);
+void run_isolated(struct property *prop, struct shared *shm) {
 
   pid_t cpid = fork();
 
   if (cpid == 0) {
-    close(pipefd[0]);
-
-    struct report r = run(prop);
-
-    if (!report_write(&r, pipefd[1]))
-      exit(EXIT_FAILURE);
-
-    close(pipefd[1]);
-
-    report_free(&r);
+    run(prop, shm);
 
     exit(EXIT_SUCCESS);
   }
 
   if (cpid == -1) {
-    close(pipefd[0]);
-    close(pipefd[1]);
     exit(EXIT_FAILURE);
   }
-
-  close(pipefd[1]);
-
-  struct report r = {0};
-  if (!report_read(&r, pipefd[0]))
-    exit(EXIT_FAILURE);
-
-  close(pipefd[0]);
 
   int status;
   waitpid(cpid, &status, 0);
 
-  report_process_status(&r, status);
-
-  return r;
+  report_process_status(&shm->r, status);
 }
 
 /*
@@ -400,18 +408,24 @@ int run_spec(struct specification spec) {
 
   struct property *prop = NULL;
   for (int i = 0; (prop = spec.props + i)->name; i++) {
-
     // Derive per property seed based on spec seed. Respect explicitly set
     // seeds.
     if (!prop->seed)
       prop->seed = spec.seed ^ hash(prop->name);
 
-    struct report r = run_isolated(prop);
+    size_t size = 1024 * 1024 * 64;
+    struct shared *shm = mmap(NULL, size, PROT_READ | PROT_WRITE,
+                              MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    shm->a.cap = size - sizeof(struct shared);
+    struct report *r = &shm->r;
 
-    result_print(prop, &r);
+    run_isolated(prop, shm);
 
-    ac[r.ok]++;
-    report_free(&r);
+    result_print(prop, r);
+
+    ac[r->ok]++;
+
+    munmap(shm, size);
   }
 
   result_summary_print(ac);

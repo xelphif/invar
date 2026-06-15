@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 /*
  * Convenience macros.
@@ -59,6 +60,14 @@ struct variant _wrap_ptr(void *);
 #define unwrap_as_str(v) (assert((v).T == VARIANT_STR), (v).str)
 #define unwrap_as_ptr(v) (assert((v).T == VARIANT_PTR), (v).ptr)
 
+struct arena {
+  size_t off;
+  size_t cap;
+  unsigned char base[];
+};
+
+void *aalloc(struct arena *a, size_t size);
+
 /*
  * input space: container for all input generators accessible to a predicate.
  */
@@ -73,6 +82,8 @@ struct input_space {
 struct instance {
   char *name;
   struct variant v;
+  int (*copy)(struct arena *a, struct variant *v);
+  void (*print)(struct variant *v);
 };
 
 struct variant instance_get(struct instance *A, char *k);
