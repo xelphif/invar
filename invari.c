@@ -56,10 +56,11 @@ int variant_copy(struct arena *a, struct variant *v) {
     return 1;
 
   case VARIANT_PTR:
+    v->T = VARIANT_UNCAPTURED;
     return 0;
+  default:
+    return 1;
   }
-
-  return 1;
 }
 
 /* Default printing behavior for each variant type. */
@@ -78,7 +79,11 @@ void variant_print(struct variant *v) {
     break;
 
   case VARIANT_PTR:
-    printf("%p", v->ptr);
+    printf("<ptr %p>", v->ptr);
+    break;
+
+  case VARIANT_UNCAPTURED:
+    printf("<ptr %p (not captured)>", v->ptr);
     break;
 
   default:

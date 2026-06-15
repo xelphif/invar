@@ -31,8 +31,8 @@ void poststate(void *ctx) { free(ctx); }
  */
 
 GEN(gen_int, rand() % 100)
-GEN(gen_double, (double)rand() / (double)RAND_MAX)
-GEN(gen_str, "Hello, world!");
+GEN(gen_str, "Hello, world!")
+GEN(gen_ptr_uncaptured, (void *)0xdeadbeef)
 
 /*
  * Predicate definitions.
@@ -117,6 +117,7 @@ struct property props[] = {
             SPACE{
                 {.name = "a", gen_int},
                 {.name = "str", gen_str},
+                {.name = "ptr_uncaptured", gen_ptr_uncaptured},
                 {0},
             },
         .seed = 0x0068663b,
