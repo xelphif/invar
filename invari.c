@@ -177,28 +177,30 @@ void report_process_status(struct report *r, int status) {
   r->signal = WTERMSIG(status);
 }
 
-void report_read(struct report *r, int fd) {
+int report_read(struct report *r, int fd) {
   if (read(fd, r, sizeof(struct report)) < 0)
-    exit(EXIT_FAILURE);
+    return 0;
 
   // Read if we have counterexamples waiting for us in the pipe.
-  if (!r->ce.n)
-    return;
+  if (r->ce.i) {
+    r->ce.i = malloc(sizeof(struct instance) * r->ce.n);
+    if (read(fd, r->ce.i, sizeof(struct instance) * r->ce.n) < 0)
+      return 0;
+  }
 
-  r->ce.i = malloc(sizeof(struct instance) * r->ce.n);
-  if (read(fd, r->ce.i, sizeof(struct instance) * r->ce.n) < 0)
-    exit(EXIT_FAILURE);
+  return 1;
 };
 
-void report_write(struct report *r, int fd) {
+int report_write(struct report *r, int fd) {
   if (write(fd, r, sizeof(struct report)) < 0)
-    exit(EXIT_FAILURE);
+    return 0;
 
-  if (!r->ce.n)
-    return;
+  if (r->ce.i) {
+    if (write(fd, r->ce.i, sizeof(struct instance) * r->ce.n) < 0)
+      return 0;
+  }
 
-  if (write(fd, r->ce.i, sizeof(struct instance) * r->ce.n) < 0)
-    exit(EXIT_FAILURE);
+  return 1;
 }
 
 void report_free(struct report *r) {
@@ -348,7 +350,8 @@ struct report run_isolated(struct property *prop) {
 
     struct report r = run(prop);
 
-    report_write(&r, pipefd[1]);
+    if (!report_write(&r, pipefd[1]))
+      exit(EXIT_FAILURE);
 
     close(pipefd[1]);
 
@@ -366,7 +369,8 @@ struct report run_isolated(struct property *prop) {
   close(pipefd[1]);
 
   struct report r = {0};
-  report_read(&r, pipefd[0]);
+  if (!report_read(&r, pipefd[0]))
+    exit(EXIT_FAILURE);
 
   close(pipefd[0]);
 
