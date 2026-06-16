@@ -31,35 +31,30 @@ struct variant _wrap_ptr(void *ptr) {
   return (struct variant){.T = VARIANT_PTR, .ptr = ptr};
 }
 
-int variant_copy(struct arena *a, struct variant *v) {
+void variant_copy(struct arena *a, struct variant *v) {
   switch (v->T) {
     // We don't copy integers or doubles since they are part of the struct.
   case VARIANT_INT:
   case VARIANT_DOUBLE:
   case VARIANT_NONE:
-    return 1;
+    return;
 
     // Default behavior for strings is to deep copy if it exists.
   case VARIANT_STR:
 
     if (!v->str)
-      return 1;
+      return;
 
     size_t n = strlen(v->str) + 1;
     char *ptr = aalloc(a, n);
 
-    assert(ptr);
-
     memcpy(ptr, v->str, n);
     v->str = ptr;
 
-    return 1;
+    return;
 
-  case VARIANT_PTR:
-    v->T = VARIANT_UNCAPTURED;
-    return 0;
   default:
-    return 1;
+    return;
   }
 }
 
@@ -136,15 +131,15 @@ struct variant instance_get(struct instance *A, char *k) {
 
 /* Copy a variant using the specified callback. If no call back is set, use
  * default behavior. */
-int instance_copy(struct arena *a, struct instance *inst) {
-  if (inst->space->copy) {
+void instance_copy(struct arena *a, struct instance *inst) {
+  if (inst->space->copy)
     inst->space->copy(a, &inst->v);
-    return 1;
-  }
-
-  return variant_copy(a, &inst->v);
+  else
+    variant_copy(a, &inst->v);
 }
 
+/* Print a variant using the specified callback. If no callback is set, use the
+ * default behavior. */
 void instance_print(struct instance *inst) {
   if (inst->space->print)
     inst->space->print(&inst->v);
