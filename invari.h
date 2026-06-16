@@ -13,7 +13,7 @@
 #define SPACE (struct input_space[])
 
 #define GEN(name, expr)                                                        \
-  struct variant name(void) {                                                  \
+  struct variant name(struct gen *ctx, int size) {                             \
     return wrap(expr);                                                         \
   }
 
@@ -70,21 +70,31 @@ struct arena {
 void *aalloc(struct arena *a, size_t size);
 
 /*
+ * generators: test data generation.
+ */
+struct gen {
+  unsigned int *seed;
+  struct arena *a;
+  int p;
+};
+
+/*
  * input space: container for all input generators accessible to a predicate.
  */
 struct input_space {
   char *name;
-  struct variant (*gen)(void);
+  struct variant (*gen)(struct gen *, int);
+  int (*copy)(struct arena *a, struct variant *v);
+  void (*free)(struct variant *v);
+  void (*print)(struct variant *v);
 };
 
 /*
  * instance: entry in input lookup table provided to predicate.
  */
 struct instance {
-  char *name;
+  struct input_space *space;
   struct variant v;
-  int (*copy)(struct arena *a, struct variant *v);
-  void (*print)(struct variant *v);
 };
 
 struct variant instance_get(struct instance *A, char *k);
