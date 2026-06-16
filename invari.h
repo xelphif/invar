@@ -26,7 +26,6 @@ enum variant_type {
   VARIANT_DOUBLE,
   VARIANT_STR,
   VARIANT_PTR,
-  VARIANT_UNCAPTURED,
 };
 
 struct variant {

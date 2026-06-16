@@ -77,10 +77,6 @@ void variant_print(struct variant *v) {
     printf("<ptr %p>", v->ptr);
     break;
 
-  case VARIANT_UNCAPTURED:
-    printf("<ptr %p (not captured)>", v->ptr);
-    break;
-
   default:
     printf("<none>");
   }
