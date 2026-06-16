@@ -177,6 +177,8 @@ static unsigned int hash(char *str) {
   return (unsigned int)((hash >> 32) ^ hash);
 }
 
+/* Get a random number from /dev/urandom. Fallback to unix time if the getrandom
+ * call fails. */
 static unsigned int nrand() {
   unsigned int r = 0;
   if (getrandom((void *)&r, sizeof(r), 0) < 0)
@@ -215,6 +217,7 @@ struct report {
   } ce;
 };
 
+/* Collect test metrics in report. */
 void report_record_result(struct report *r, bool ok, double elapsed, int n) {
   r->ok &= ok;
   r->ac[ok]++;
@@ -222,6 +225,8 @@ void report_record_result(struct report *r, bool ok, double elapsed, int n) {
   r->t.max = max(r->t.max, elapsed);
 }
 
+/* Copy failed instances to shared memory arena for counterexample reporting in
+ * output. */
 void report_record_ce(struct arena *a, struct report *r, struct instance *A,
                       int it) {
   r->ce.it = it;
@@ -239,6 +244,7 @@ void report_record_ce(struct arena *a, struct report *r, struct instance *A,
   }
 }
 
+/* Process output from waitpid. We consider a crashed process a failure. */
 void report_process_status(struct report *r, int status) {
 
   if (!WIFSIGNALED(status))
@@ -321,6 +327,9 @@ void result_summary_print(int ac[2]) {
          BOLD, RESET, passed, failed, passed + failed);
 }
 
+/*
+ * Shared memory
+ */
 struct shared {
   struct report r;
   struct arena a;
