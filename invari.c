@@ -463,6 +463,14 @@ size_t gen_max_bytes(struct gen *gen) {
   size_t defer = 0;
   size_t bytes = gen_max_bytes_inner(gen, &defer);
 
+  // If defer is not reset, that means we have a generator that must allocate
+  // (i.e. a generator not of the types int, float, or none) that is either at
+  // the root and unbounded or has no ancestor with a defined bound.
+  if (defer)
+    die("generator allocates type of size %zu and is unbounded, set the bound "
+        "of this generator or one of its ancestors",
+        defer);
+
   return bytes;
 }
 
