@@ -68,13 +68,7 @@ void variant_copy(struct arena *a, struct variant *v) {
       return;
 
     size_t n = strlen(v->str) + 1;
-    char *ptr = aalloc(a, n);
-
-    if (!ptr)
-      die("failed to allocate %zu bytes to the shared arena", n);
-
-    memcpy(ptr, v->str, n);
-    v->str = ptr;
+    v->str = apush(a, v->str, n);
 
     return;
 
@@ -231,6 +225,17 @@ void *aalloc(struct arena *a, size_t size) {
   return ptr;
 }
 
+void *apush(struct arena *a, void *src, size_t size) {
+  void *ptr = aalloc(a, size);
+
+  if (!ptr)
+    die("failed to allocate %zu bytes in shared arena", size);
+
+  memcpy(ptr, src, size);
+
+  return ptr;
+}
+
 /*
  * report: information to output upon test completion.
  */
@@ -267,12 +272,7 @@ void report_record_ce(struct arena *a, struct report *r, struct instance *A,
     n++;
 
   size_t size = sizeof(struct instance) * (n + 1);
-  r->ce.i = aalloc(a, size);
-
-  if (!r->ce.i)
-    die("failed to allocate %zu bytes to the shared arena", size);
-
-  memcpy(r->ce.i, A, size);
+  r->ce.i = apush(a, A, size);
 
   for (int i = 0; i < n; i++) {
     instance_copy(a, r->ce.i + i);

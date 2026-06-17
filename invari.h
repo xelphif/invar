@@ -71,6 +71,7 @@ struct arena {
 };
 
 void *aalloc(struct arena *a, size_t size);
+void *apush(struct arena *a, void *src, size_t size);
 
 /*
  * generators: test data generation.

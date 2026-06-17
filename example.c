@@ -83,13 +83,7 @@ void *tree_copy_inner(struct arena *a, struct node *t) {
   if (!t)
     return NULL;
 
-  // TODO: APUSH {
-  struct node *ptr = aalloc(a, sizeof(struct node));
-
-  assert(ptr);
-
-  memcpy(ptr, t, sizeof(struct node));
-  // }
+  struct node *ptr = apush(a, t, sizeof(struct node));
 
   ptr->l = tree_copy_inner(a, t->l);
   ptr->r = tree_copy_inner(a, t->r);
