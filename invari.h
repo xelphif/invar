@@ -8,7 +8,7 @@
 /*
  * Convenience macros.
  */
-#define PREDICATE(p) bool p(struct instance *i, void *ctx)
+#define PREDICATE(p) bool p(struct instance *table, void *ctx)
 
 #define SPACE (struct input_space[])
 
@@ -108,7 +108,7 @@ struct variant instance_get(struct instance *A, char *k);
  */
 struct property {
   char *name;
-  bool (*predicate)(struct instance *i, void *ctx);
+  bool (*predicate)(struct instance *table, void *ctx);
   void *(*prestate)(void);
   void (*poststate)(void *ctx);
   struct input_space *space;

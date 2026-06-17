@@ -109,40 +109,40 @@ void tree_print(struct variant *v) { tree_print_inner(v->ptr); }
 PREDICATE(add_commutativity) {
 
   // Data can be retrieved from the variant look out table.
-  int a = given_int(i, "a");
-  int b = given_int(i, "b");
+  int a = given_int(table, "a");
+  int b = given_int(table, "b");
 
   return add(a, b) == add(b, a);
 }
 
 PREDICATE(add_associativity) {
-  int a = given_int(i, "a");
-  int b = given_int(i, "b");
-  int c = given_int(i, "c");
+  int a = given_int(table, "a");
+  int b = given_int(table, "b");
+  int c = given_int(table, "c");
 
   return add(add(a, b), c) == add(a, add(b, c));
 }
 
 PREDICATE(add_identity) {
-  int a = given_int(i, "a");
+  int a = given_int(table, "a");
 
   return add(a, 0) == a;
 }
 
 PREDICATE(add_inverse) {
-  int a = given_int(i, "a");
+  int a = given_int(table, "a");
 
   return add(a, -a) == 0;
 }
 
 PREDICATE(add_less_than_50) {
-  int a = given_int(i, "a");
+  int a = given_int(table, "a");
 
   return a < 50;
 }
 
 PREDICATE(add_tree_example) {
-  struct node *t = given_ptr(i, "tree");
+  struct node *t = given_ptr(table, "tree");
 
   return false;
 }
