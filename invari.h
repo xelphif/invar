@@ -12,10 +12,14 @@
 
 #define SPACE (struct input_space[])
 
-#define GEN(name, expr)                                                        \
-  struct variant name(struct gen *ctx, int size) {                             \
+#define SAMPLE(name, expr)                                                     \
+  struct variant name(struct gen *self, unsigned int *seed, int size) {        \
     return wrap(expr);                                                         \
   }
+
+#define ELEM (struct gen *[])
+
+#define TYPES (size_t[])
 
 /*
  * variant: generic container for function parameters.
@@ -72,17 +76,29 @@ void *aalloc(struct arena *a, size_t size);
  * generators: test data generation.
  */
 struct gen {
-  unsigned int *seed;
-  struct arena *a;
+  char *name;
+  struct variant (*sample)(struct gen *, unsigned int *, int);
+  int size;
   int p;
+  struct gen **elem;
+  size_t *types;
 };
 
 /*
  * input space: container for all input generators accessible to a predicate.
  */
+enum space_type {
+  SPACE_GENERATOR,
+  SPACE_FIXED,
+};
+
 struct input_space {
   char *name;
-  struct variant (*gen)(struct gen *, int);
+  enum space_type T;
+  union {
+    struct gen gen;
+    struct variant fixed;
+  };
   int (*copy)(struct arena *a, struct variant *v);
   void (*free)(struct variant *v);
   void (*print)(struct variant *v);
@@ -104,6 +120,15 @@ struct variant instance_get(struct instance *A, char *k);
 #define given_ptr(i, k) (unwrap_as_ptr(instance_get((i), (k))))
 
 /*
+ * Configuration that can be defined at the property and specification level.
+ */
+struct config {
+  unsigned int seed;
+  int iterations;
+  size_t alloc;
+};
+
+/*
  * property: system under test.
  */
 struct property {
@@ -112,8 +137,7 @@ struct property {
   void *(*prestate)(void);
   void (*poststate)(void *ctx);
   struct input_space *space;
-  unsigned int seed;
-  int iterations;
+  struct config cfg;
 };
 
 /*
@@ -122,7 +146,7 @@ struct property {
 struct specification {
   char *name;
   struct property *props;
-  unsigned int seed;
+  struct config cfg;
 };
 
 int run_spec(struct specification spec);
