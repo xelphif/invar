@@ -102,6 +102,50 @@ void variant_print(struct variant *v) {
 }
 
 /*
+ * utilities
+ */
+
+/* Get current time with nanosecond precision. */
+static inline double timer(void) {
+  struct timespec ts;
+  clockid_t id = CLOCK_MONOTONIC_RAW;
+
+  clock_gettime(id, &ts);
+
+  return (double)ts.tv_sec + (double)ts.tv_nsec / 1.0e9;
+}
+
+/* Timing statistics helper functions. */
+static inline double mean(double old, double t, int n) {
+  return ((old * n) + t) / (n + 1);
+}
+static inline double max(double x, double y) { return x > y ? x : y; }
+
+/* FNV-1a hashing algorithm. Further reading:
+ * https://en.wikipedia.org/wiki/Fowler-Noll-Vo_hash_function */
+static inline unsigned int hash(char *str) {
+  unsigned long hash = 0xcbf29ce484222325; // FNV offset basis
+  unsigned long prime = 0x100000001b3;     // FNV prime
+
+  for (char *c = str; *c != '\0'; c++) {
+    hash ^= *c;
+    hash *= prime;
+  }
+
+  return (unsigned int)((hash >> 32) ^ hash);
+}
+
+/* Get a random number from /dev/urandom. Fallback to unix time if the getrandom
+ * call fails. */
+static inline unsigned int nrand() {
+  unsigned int r = 0;
+  if (getrandom((void *)&r, sizeof(r), 0) < 0)
+    r = time(NULL);
+
+  return r;
+}
+
+/*
  * instance
  */
 
@@ -168,48 +212,59 @@ void instance_print(struct instance *inst) {
     variant_print(&inst->v);
 }
 
-/*
- * utilities
- */
+/* Calculate the maxium amount of bytes an arbitrary composition of sized
+ * generators can allocate in order to properly size our shared memory. */
+size_t gen_max_bytes_inner(struct gen *gen, size_t *defer) {
+  size_t bytes = 0;
+  size_t max_child = 0;
 
-/* Get current time with nanosecond precision. */
-double timer(void) {
-  struct timespec ts;
-  clockid_t id = CLOCK_MONOTONIC_RAW;
-
-  clock_gettime(id, &ts);
-
-  return (double)ts.tv_sec + (double)ts.tv_nsec / 1.0e9;
-}
-
-/* Timing statistics helper functions. */
-static double mean(double old, double t, int n) {
-  return ((old * n) + t) / (n + 1);
-}
-static inline double max(double x, double y) { return x > y ? x : y; }
-
-/* FNV-1a hashing algorithm. Further reading:
- * https://en.wikipedia.org/wiki/Fowler-Noll-Vo_hash_function */
-static unsigned int hash(char *str) {
-  unsigned long hash = 0xcbf29ce484222325; // FNV offset basis
-  unsigned long prime = 0x100000001b3;     // FNV prime
-
-  for (char *c = str; *c != '\0'; c++) {
-    hash ^= *c;
-    hash *= prime;
+  // In the event of child nodes that do not have bounds defined, they are
+  // assumed to share their bound with their parent or closest bounded ancestor.
+  // This means that our estimate is the size of the largest type multiplied by
+  // the bound of the ancestor, much like how a union behaves.
+  for (struct gen **e = gen->elem; e && *e; e++) {
+    size_t defer_child = 0;
+    bytes += gen_max_bytes_inner(*e, &defer_child);
+    max_child = max(max_child, defer_child);
   }
 
-  return (unsigned int)((hash >> 32) ^ hash);
+  size_t max_type = 0;
+  for (size_t *t = gen->types; t && *t != -1; t++)
+    max_type = max(max_type, *t);
+
+  max_type = max(max_type, max_child);
+
+  if (gen->size == 0) {
+    *defer = max_type;
+    return bytes;
+  }
+
+  return bytes + (max_type * gen->size);
 }
 
-/* Get a random number from /dev/urandom. Fallback to unix time if the getrandom
- * call fails. */
-static unsigned int nrand() {
-  unsigned int r = 0;
-  if (getrandom((void *)&r, sizeof(r), 0) < 0)
-    r = time(NULL);
+size_t gen_max_bytes(struct gen *gen) {
+  size_t defer = 0;
+  size_t bytes = gen_max_bytes_inner(gen, &defer);
 
-  return r;
+  // If defer is not reset, that means we have a generator that must allocate
+  // (i.e. a generator not of the types int, float, or none) that is either at
+  // the root and unbounded or has no ancestor with a defined bound.
+  if (defer)
+    die("generator allocates type of size %zu and is unbounded, set the bound "
+        "of this generator or one of its ancestors",
+        defer);
+
+  return bytes;
+}
+
+size_t instance_max_bytes(struct input_space *space) {
+  size_t bytes = 0;
+
+  for (struct input_space *e = space; e->name; e++)
+    bytes += gen_max_bytes(&e->gen) + sizeof(struct instance);
+  bytes += sizeof(struct instance);
+
+  return bytes;
 }
 
 /*
@@ -439,61 +494,6 @@ void run_isolated(struct property *prop, struct shared *shm) {
   waitpid(cpid, &status, 0);
 
   report_process_status(&shm->r, status);
-}
-
-/* Calculate the maxium amount of bytes an arbitrary composition of sized
- * generators can allocate in order to properly size our shared memory. */
-size_t gen_max_bytes_inner(struct gen *gen, size_t *defer) {
-  size_t bytes = 0;
-  size_t max_child = 0;
-
-  // In the event of child nodes that do not have bounds defined, they are
-  // assumed to share their bound with their parent or closest bounded ancestor.
-  // This means that our estimate is the size of the largest type multiplied by
-  // the bound of the ancestor, much like how a union behaves.
-  for (struct gen **e = gen->elem; e && *e; e++) {
-    size_t defer_child = 0;
-    bytes += gen_max_bytes_inner(*e, &defer_child);
-    max_child = max(max_child, defer_child);
-  }
-
-  size_t max_type = 0;
-  for (size_t *t = gen->types; t && *t != -1; t++)
-    max_type = max(max_type, *t);
-
-  max_type = max(max_type, max_child);
-
-  if (gen->size == 0) {
-    *defer = max_type;
-    return bytes;
-  }
-
-  return bytes + (max_type * gen->size);
-}
-
-size_t gen_max_bytes(struct gen *gen) {
-  size_t defer = 0;
-  size_t bytes = gen_max_bytes_inner(gen, &defer);
-
-  // If defer is not reset, that means we have a generator that must allocate
-  // (i.e. a generator not of the types int, float, or none) that is either at
-  // the root and unbounded or has no ancestor with a defined bound.
-  if (defer)
-    die("generator allocates type of size %zu and is unbounded, set the bound "
-        "of this generator or one of its ancestors",
-        defer);
-
-  return bytes;
-}
-
-size_t instance_max_bytes(struct input_space *space) {
-  size_t bytes = 0;
-
-  for (struct input_space *e = space; e->name; e++)
-    bytes += gen_max_bytes(&e->gen) + sizeof(struct instance);
-  bytes += sizeof(struct instance);
-
-  return bytes;
 }
 
 /*
