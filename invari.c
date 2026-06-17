@@ -2,8 +2,10 @@
  * invari.c - simple testing framework
  */
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdnoreturn.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/random.h>
@@ -14,6 +16,26 @@
 #include "invari.h"
 
 #define ITER_DEFAULT 100
+
+#define RESET "\e[0m"
+#define BOLD "\e[1m"
+#define RED "\e[1;31m"
+#define GREEN "\e[1;32m"
+
+/*
+ * Error reporting.
+ */
+noreturn void die(const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+
+  fprintf(stderr, RED "[ERR]" RESET " ");
+  vfprintf(stderr, fmt, args);
+  fputc('\n', stderr);
+
+  va_end(args);
+  abort();
+}
 
 /*
  * variant: internal helper functions to wrap variants generically.
@@ -264,10 +286,6 @@ static char *result_str[] = {
 /*
  * Output
  */
-#define RESET "\e[0m"
-#define BOLD "\e[1m"
-#define RED "\e[1;31m"
-#define GREEN "\e[1;32m"
 void result_print_header(struct property *prop, struct report *r) {
   int passed = r->ac[true];
   int failed = r->ac[false];
