@@ -70,6 +70,9 @@ void variant_copy(struct arena *a, struct variant *v) {
     size_t n = strlen(v->str) + 1;
     char *ptr = aalloc(a, n);
 
+    if (!ptr)
+      die("failed to allocate %zu bytes to the shared arena", n);
+
     memcpy(ptr, v->str, n);
     v->str = ptr;
 
@@ -114,7 +117,12 @@ struct instance *instance_table_init(struct input_space *space) {
   for (struct input_space *e = space; e->name; e++)
     n++;
 
-  struct instance *A = malloc(sizeof(struct instance) * (n + 1));
+  size_t size = sizeof(struct instance) * (n + 1);
+  struct instance *A = malloc(size);
+
+  if (!A)
+    die("failed to allocate %zu bytes", size);
+
   for (int i = 0; i < n; i++)
     A[i] = (struct instance){.space = (space + i)};
   A[n] = (struct instance){0};
@@ -260,6 +268,10 @@ void report_record_ce(struct arena *a, struct report *r, struct instance *A,
 
   size_t size = sizeof(struct instance) * (n + 1);
   r->ce.i = aalloc(a, size);
+
+  if (!r->ce.i)
+    die("failed to allocate %zu bytes to the shared arena", size);
+
   memcpy(r->ce.i, A, size);
 
   for (int i = 0; i < n; i++) {
@@ -420,7 +432,7 @@ void run_isolated(struct property *prop, struct shared *shm) {
   }
 
   if (cpid == -1) {
-    exit(EXIT_FAILURE);
+    die("failed to fork process");
   }
 
   int status;
@@ -514,6 +526,10 @@ int run_spec(struct specification spec) {
 
     struct shared *shm = mmap(NULL, size, PROT_READ | PROT_WRITE,
                               MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+
+    if (shm == MAP_FAILED)
+      die("failed to map shared memory region");
+
     shm->a.cap = size - sizeof(struct shared);
     struct report *r = &shm->r;
 
@@ -523,7 +539,8 @@ int run_spec(struct specification spec) {
 
     ac[r->ok]++;
 
-    munmap(shm, size);
+    if (munmap(shm, size))
+      die("failed to unmap shared memory region");
   }
 
   result_summary_print(ac);
