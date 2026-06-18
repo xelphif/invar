@@ -47,15 +47,14 @@ struct node *sample_tree(struct gen *self, unsigned int *seed, int size) {
   if (!size)
     return NULL;
 
-  struct node *t = tree_init(size);
-
+  struct node *t = tree_init(rand_r(seed) % 100);
   size--;
-  int split = size ? rand_r(seed) % (size + 1) : 0;
-  int lsize = size - split;
-  int rsize = split;
 
-  t->l = sample_tree(self, seed, lsize);
-  t->r = sample_tree(self, seed, rsize);
+  int lsize = 0, rsize = 0;
+  splitr(size, seed, &lsize, &rsize);
+
+  t->l = bernoulli(self->p, seed) ? sample_tree(self, seed, lsize) : NULL;
+  t->r = bernoulli(self->p, seed) ? sample_tree(self, seed, rsize) : NULL;
 
   return t;
 }
@@ -68,7 +67,8 @@ struct variant sample_tree_wrap(struct gen *self, unsigned int *seed,
 struct gen gen_tree = {
     .name = "gen_tree",
     .sample = sample_tree_wrap,
-    .size = 10,
+    .size = 1000,
+    .p = 20,
     .types = TYPES{sizeof(struct node), -1},
 };
 

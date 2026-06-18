@@ -88,6 +88,10 @@ struct gen {
   size_t *types;
 };
 
+void split(int size, int *l, int *r);
+void splitr(int size, unsigned int *seed, int *l, int *r);
+bool bernoulli(int p, unsigned int *seed);
+
 /*
  * input space: container for all input generators accessible to a predicate.
  */

@@ -146,6 +146,29 @@ static inline unsigned int nrand() {
 }
 
 /*
+ * generators
+ */
+
+/* Split a size into two even parts. */
+void split(int size, int *l, int *r) {
+  *l = size / 2;
+  *r = size - *l;
+}
+
+/* Split a size into two random parts. */
+void splitr(int size, unsigned int *seed, int *l, int *r) {
+  *l = size ? rand_r(seed) % (size + 1) : 0;
+  *r = size - *l;
+}
+
+/* Bernoulli random variable generator; weighted coin flip. It is inverted from
+ * the typical implementation, thus p represents the probability of an event NOT
+ * happening. */
+bool bernoulli(int p, unsigned int *seed) {
+  return (rand_r(seed) % 100) + 1 > p;
+}
+
+/*
  * instance
  */
 
