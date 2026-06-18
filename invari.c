@@ -273,7 +273,7 @@ size_t gen_max_bytes_inner(struct gen *gen, size_t *defer) {
     return bytes;
   }
 
-  return bytes + (max_type * gen->size);
+  return (bytes + max_type) * gen->size;
 }
 
 size_t gen_max_bytes(struct gen *gen) {
