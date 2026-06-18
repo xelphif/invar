@@ -36,7 +36,6 @@ void tree_destroy(struct node *t) {
 SAMPLE(sample_int, rand_r(seed) % 100)
 
 struct gen gen_int = {
-    .name = "gen_int",
     .sample = sample_int,
 };
 
@@ -59,13 +58,9 @@ struct node *sample_tree(struct gen *self, unsigned int *seed, int size) {
   return t;
 }
 
-struct variant sample_tree_wrap(struct gen *self, unsigned int *seed,
-                                int size) {
-  return wrap((void *)(sample_tree(self, seed, size)));
-}
+SAMPLE(sample_tree_wrap, (void *)sample_tree(self, seed, size))
 
 struct gen gen_tree = {
-    .name = "gen_tree",
     .sample = sample_tree_wrap,
     .size = 1000,
     .p = 20,
@@ -178,8 +173,8 @@ int main() {
           .predicate = add_commutativity, /* Predicate to be tested. */
           .space =
               SPACE{
-                  {.name = "a", GENERATOR(gen_int)},
-                  {.name = "b", GENERATOR(gen_int)},
+                  {.name = "a", GEN(gen_int)},
+                  {.name = "b", GEN(gen_int)},
                   {0},
               },
 
@@ -189,16 +184,16 @@ int main() {
           .predicate = add_associativity,
           .space =
               SPACE{
-                  {.name = "a", GENERATOR(gen_int)},
-                  {.name = "b", GENERATOR(gen_int)},
-                  {.name = "c", GENERATOR(gen_int)},
+                  {.name = "a", GEN(gen_int)},
+                  {.name = "b", GEN(gen_int)},
+                  {.name = "c", GEN(gen_int)},
                   {0},
               },
       },
       {
           .name = "identity",
           .predicate = add_identity,
-          .space = SPACE{{.name = "a", GENERATOR(gen_int)}, {0}},
+          .space = SPACE{{.name = "a", GEN(gen_int)}, {0}},
           .cfg =
               {
                   .iterations = 150,
@@ -207,14 +202,14 @@ int main() {
       {
           .name = "inverse",
           .predicate = add_inverse,
-          .space = SPACE{{.name = "a", GENERATOR(gen_int)}, {0}},
+          .space = SPACE{{.name = "a", GEN(gen_int)}, {0}},
       },
       {
           .name = "less_than_50",
           .predicate = add_less_than_50,
           .space =
               SPACE{
-                  {.name = "a", GENERATOR(gen_int)},
+                  {.name = "a", GEN(gen_int)},
                   {.name = "str", FIXED("Hello, world!")},
                   {.name = "ptr", FIXED((void *)0xdeadbeef)},
                   {0},
@@ -230,7 +225,7 @@ int main() {
           .space =
               SPACE{
                   {.name = "tree",
-                   GENERATOR(gen_tree),
+                   GEN(gen_tree),
                    .copy = tree_copy,
                    .free = tree_free,
                    .print = tree_print},
@@ -240,7 +235,7 @@ int main() {
       {
           .name = "crash_example",
           .predicate = add_crash_example,
-          .space = SPACE{{.name = "a", GENERATOR(gen_int)}, {0}},
+          .space = SPACE{{.name = "a", GEN(gen_int)}, {0}},
       },
       {0},
   };

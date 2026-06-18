@@ -149,6 +149,51 @@ static inline unsigned int nrand() {
  * generators
  */
 
+/* Calculate the maxium amount of bytes an arbitrary composition of sized
+ * generators can allocate in order to properly size our shared memory. */
+size_t gen_max_bytes_inner(struct gen *gen, size_t *defer) {
+  size_t bytes = 0;
+  size_t max_child = 0;
+
+  // In the event of child nodes that do not have bounds defined, they are
+  // assumed to share their bound with their parent or closest bounded ancestor.
+  // This means that our estimate is the size of the largest type multiplied by
+  // the bound of the ancestor, much like how a union behaves.
+  for (struct gen **e = gen->elem; e && *e; e++) {
+    size_t defer_child = 0;
+    bytes += gen_max_bytes_inner(*e, &defer_child);
+    max_child = max(max_child, defer_child);
+  }
+
+  size_t max_type = 0;
+  for (size_t *t = gen->types; t && *t != -1; t++)
+    max_type = max(max_type, *t);
+
+  max_type = max(max_type, max_child);
+
+  if (gen->size == 0) {
+    *defer = max_type;
+    return bytes;
+  }
+
+  return (bytes + max_type) * gen->size;
+}
+
+size_t gen_max_bytes(struct gen *gen) {
+  size_t defer = 0;
+  size_t bytes = gen_max_bytes_inner(gen, &defer);
+
+  // If defer is not reset, that means we have a generator that must allocate
+  // (i.e. a generator not of the types int, float, or none) that is either at
+  // the root and unbounded or has no ancestor with a defined bound.
+  if (defer)
+    die("generator allocates type of size %zu and is unbounded, set the bound "
+        "of this generator or one of its ancestors",
+        defer);
+
+  return bytes;
+}
+
 /* Split a size into two even parts. */
 void split(int size, int *l, int *r) {
   *l = size / 2;
@@ -244,51 +289,6 @@ void instance_print(struct instance *inst) {
     inst->space->print(&inst->v);
   else
     variant_print(&inst->v);
-}
-
-/* Calculate the maxium amount of bytes an arbitrary composition of sized
- * generators can allocate in order to properly size our shared memory. */
-size_t gen_max_bytes_inner(struct gen *gen, size_t *defer) {
-  size_t bytes = 0;
-  size_t max_child = 0;
-
-  // In the event of child nodes that do not have bounds defined, they are
-  // assumed to share their bound with their parent or closest bounded ancestor.
-  // This means that our estimate is the size of the largest type multiplied by
-  // the bound of the ancestor, much like how a union behaves.
-  for (struct gen **e = gen->elem; e && *e; e++) {
-    size_t defer_child = 0;
-    bytes += gen_max_bytes_inner(*e, &defer_child);
-    max_child = max(max_child, defer_child);
-  }
-
-  size_t max_type = 0;
-  for (size_t *t = gen->types; t && *t != -1; t++)
-    max_type = max(max_type, *t);
-
-  max_type = max(max_type, max_child);
-
-  if (gen->size == 0) {
-    *defer = max_type;
-    return bytes;
-  }
-
-  return (bytes + max_type) * gen->size;
-}
-
-size_t gen_max_bytes(struct gen *gen) {
-  size_t defer = 0;
-  size_t bytes = gen_max_bytes_inner(gen, &defer);
-
-  // If defer is not reset, that means we have a generator that must allocate
-  // (i.e. a generator not of the types int, float, or none) that is either at
-  // the root and unbounded or has no ancestor with a defined bound.
-  if (defer)
-    die("generator allocates type of size %zu and is unbounded, set the bound "
-        "of this generator or one of its ancestors",
-        defer);
-
-  return bytes;
 }
 
 size_t instance_max_bytes(struct input_space *space) {

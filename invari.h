@@ -17,7 +17,7 @@
     return wrap(expr);                                                         \
   }
 
-#define GENERATOR(g) .T = SPACE_GENERATOR, .gen = (g)
+#define GEN(g) .T = SPACE_GENERATOR, .gen = (g)
 #define FIXED(v) .T = SPACE_FIXED, .fixed = wrap(v)
 
 #define ELEM (struct gen *[])
@@ -80,7 +80,6 @@ void *apush(struct arena *a, void *src, size_t size);
  * generators: test data generation.
  */
 struct gen {
-  char *name;
   struct variant (*sample)(struct gen *, unsigned int *, int);
   int size;
   int p;
