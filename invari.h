@@ -17,6 +17,9 @@
     return wrap(expr);                                                         \
   }
 
+#define GENERATOR(g) .T = SPACE_GENERATOR, .gen = (g)
+#define FIXED(v) .T = SPACE_FIXED, .fixed = wrap(v)
+
 #define ELEM (struct gen *[])
 
 #define TYPES (size_t[])

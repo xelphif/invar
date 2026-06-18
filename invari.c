@@ -179,8 +179,16 @@ void instance_free(struct instance *A) {
 void instance_table_gen(struct instance *A, unsigned int *seed) {
   for (struct instance *e = A; e->space; e++) {
     struct gen *gen = &e->space->gen;
-    e->v =
-        gen->sample ? gen->sample(gen, seed, gen->size) : (struct variant){0};
+
+    switch (e->space->T) {
+    case SPACE_GENERATOR:
+      e->v =
+          gen->sample ? gen->sample(gen, seed, gen->size) : (struct variant){0};
+      break;
+    case SPACE_FIXED:
+      e->v = e->space->fixed;
+      break;
+    }
   }
 }
 
@@ -197,6 +205,9 @@ struct variant instance_get(struct instance *A, char *k) {
 /* Copy a variant using the specified callback. If no call back is set, use
  * default behavior. */
 void instance_copy(struct arena *a, struct instance *inst) {
+  if (inst->space->T == SPACE_FIXED)
+    return;
+
   if (inst->space->copy)
     inst->space->copy(a, &inst->v);
   else
@@ -260,8 +271,14 @@ size_t gen_max_bytes(struct gen *gen) {
 size_t instance_max_bytes(struct input_space *space) {
   size_t bytes = 0;
 
-  for (struct input_space *e = space; e->name; e++)
-    bytes += gen_max_bytes(&e->gen) + sizeof(struct instance);
+  for (struct input_space *e = space; e->name; e++) {
+    bytes += sizeof(struct instance);
+
+    if (e->T == SPACE_FIXED)
+      continue;
+
+    bytes += gen_max_bytes(&e->gen);
+  }
   bytes += sizeof(struct instance);
 
   return bytes;
