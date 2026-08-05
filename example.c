@@ -165,87 +165,87 @@ PREDICATE(add_crash_example) {
   return true;
 }
 
+struct property props[] = {
+    {
+        .name = "commutativity", /* Name of the property for reporting. */
+        .predicate = add_commutativity, /* Predicate to be tested. */
+        .space =
+            SPACE{
+                {.name = "a", GEN(gen_int)},
+                {.name = "b", GEN(gen_int)},
+                {0},
+            },
+
+    },
+    {
+        .name = "associativity",
+        .predicate = add_associativity,
+        .space =
+            SPACE{
+                {.name = "a", GEN(gen_int)},
+                {.name = "b", GEN(gen_int)},
+                {.name = "c", GEN(gen_int)},
+                {0},
+            },
+    },
+    {
+        .name = "identity",
+        .predicate = add_identity,
+        .space = SPACE{{.name = "a", GEN(gen_int)}, {0}},
+        .cfg =
+            {
+                .iterations = 150,
+            },
+    },
+    {
+        .name = "inverse",
+        .predicate = add_inverse,
+        .space = SPACE{{.name = "a", GEN(gen_int)}, {0}},
+    },
+    {
+        .name = "less_than_50",
+        .predicate = add_less_than_50,
+        .space =
+            SPACE{
+                {.name = "a", GEN(gen_int)},
+                {.name = "str", FIXED_STR("Hello, world!")},
+                {.name = "ptr", FIXED_PTR((void *)0xdeadbeef)},
+                {0},
+            },
+        .cfg =
+            {
+                .seed = 0x18856732,
+            },
+    },
+    {
+        .name = "tree_print_example",
+        .predicate = add_tree_example,
+        .space =
+            SPACE{
+                {.name = "tree",
+                 GEN(gen_tree),
+                 .copy = tree_copy,
+                 .free = tree_free,
+                 .print = tree_print},
+                {0},
+            },
+    },
+    {
+        .name = "crash_example",
+        .predicate = add_crash_example,
+        .space = SPACE{{.name = "a", GEN(gen_int)}, {0}},
+    },
+    {0},
+};
+
+struct specification spec = {
+    .name = "test",
+    .props = props,
+};
+
 int main() {
 
-  struct property props[] = {
-      {
-          .name = "commutativity", /* Name of the property for reporting. */
-          .predicate = add_commutativity, /* Predicate to be tested. */
-          .space =
-              SPACE{
-                  {.name = "a", GEN(gen_int)},
-                  {.name = "b", GEN(gen_int)},
-                  {0},
-              },
-
-      },
-      {
-          .name = "associativity",
-          .predicate = add_associativity,
-          .space =
-              SPACE{
-                  {.name = "a", GEN(gen_int)},
-                  {.name = "b", GEN(gen_int)},
-                  {.name = "c", GEN(gen_int)},
-                  {0},
-              },
-      },
-      {
-          .name = "identity",
-          .predicate = add_identity,
-          .space = SPACE{{.name = "a", GEN(gen_int)}, {0}},
-          .cfg =
-              {
-                  .iterations = 150,
-              },
-      },
-      {
-          .name = "inverse",
-          .predicate = add_inverse,
-          .space = SPACE{{.name = "a", GEN(gen_int)}, {0}},
-      },
-      {
-          .name = "less_than_50",
-          .predicate = add_less_than_50,
-          .space =
-              SPACE{
-                  {.name = "a", GEN(gen_int)},
-                  {.name = "str", FIXED("Hello, world!")},
-                  {.name = "ptr", FIXED((void *)0xdeadbeef)},
-                  {0},
-              },
-          .cfg =
-              {
-                  .seed = 0x18856732,
-              },
-      },
-      {
-          .name = "tree_print_example",
-          .predicate = add_tree_example,
-          .space =
-              SPACE{
-                  {.name = "tree",
-                   GEN(gen_tree),
-                   .copy = tree_copy,
-                   .free = tree_free,
-                   .print = tree_print},
-                  {0},
-              },
-      },
-      {
-          .name = "crash_example",
-          .predicate = add_crash_example,
-          .space = SPACE{{.name = "a", GEN(gen_int)}, {0}},
-      },
-      {0},
-  };
-
-  struct specification spec = {
-      .name = "test",
-      .props = props,
-  };
-
-  run_spec(spec);
+  run_spec(&spec);
 
   return 0;
 }

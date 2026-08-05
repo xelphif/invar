@@ -17,8 +17,11 @@
     return wrap(expr);                                                         \
   }
 
-#define GEN(g) .T = SPACE_GENERATOR, .gen = (g)
-#define FIXED(v) .T = SPACE_FIXED, .fixed = wrap(v)
+#define GEN(g) .T = SPACE_GENERATOR, .gen = &(g)
+#define FIXED_I(v) .T = SPACE_FIXED, .fixed = wrap_i(v)
+#define FIXED_D(v) .T = SPACE_FIXED, .fixed = wrap_d(v)
+#define FIXED_STR(v) .T = SPACE_FIXED, .fixed = wrap_str(v)
+#define FIXED_PTR(v) .T = SPACE_FIXED, .fixed = wrap_ptr(v)
 
 #define ELEM (struct gen *[])
 
@@ -103,7 +106,7 @@ struct input_space {
   char *name;
   enum space_type T;
   union {
-    struct gen gen;
+    struct gen *gen;
     struct variant fixed;
   };
   int (*copy)(struct arena *a, struct variant *v);
@@ -156,6 +159,6 @@ struct specification {
   struct config cfg;
 };
 
-int run_spec(struct specification spec);
+int run_spec(struct specification *spec);
 
 #endif
