@@ -149,6 +149,7 @@ static inline unsigned int nrand() {
  * generators
  */
 
+static inline size_t max_size(size_t x, size_t y) { return x > y ? x : y; }
 /* Calculate the maxium amount of bytes an arbitrary composition of sized
  * generators can allocate in order to properly size our shared memory. */
 size_t gen_max_bytes_inner(struct gen *gen, size_t *defer) {
@@ -162,14 +163,14 @@ size_t gen_max_bytes_inner(struct gen *gen, size_t *defer) {
   for (struct gen **e = gen->elem; e && *e; e++) {
     size_t defer_child = 0;
     bytes += gen_max_bytes_inner(*e, &defer_child);
-    max_child = max(max_child, defer_child);
+    max_child = max_size(max_child, defer_child);
   }
 
   size_t max_type = 0;
   for (size_t *t = gen->types; t && *t != -1; t++)
-    max_type = max(max_type, *t);
+    max_type = max_size(max_type, *t);
 
-  max_type = max(max_type, max_child);
+  max_type = max_size(max_type, max_child);
 
   if (gen->size == 0) {
     *defer = max_type;
