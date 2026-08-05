@@ -152,7 +152,7 @@ static inline unsigned int nrand() {
 static inline size_t max_size(size_t x, size_t y) { return x > y ? x : y; }
 /* Calculate the maxium amount of bytes an arbitrary composition of sized
  * generators can allocate in order to properly size our shared memory. */
-size_t gen_max_bytes_inner(struct gen *gen, size_t *defer) {
+size_t gen_max_bytes_iter(struct gen *gen, size_t *defer) {
   size_t bytes = 0;
   size_t max_child = 0;
 
@@ -162,7 +162,7 @@ size_t gen_max_bytes_inner(struct gen *gen, size_t *defer) {
   // the bound of the ancestor, much like how a union behaves.
   for (struct gen **e = gen->elem; e && *e; e++) {
     size_t defer_child = 0;
-    bytes += gen_max_bytes_inner(*e, &defer_child);
+    bytes += gen_max_bytes_iter(*e, &defer_child);
     max_child = max_size(max_child, defer_child);
   }
 
@@ -182,7 +182,7 @@ size_t gen_max_bytes_inner(struct gen *gen, size_t *defer) {
 
 size_t gen_max_bytes(struct gen *gen) {
   size_t defer = 0;
-  size_t bytes = gen_max_bytes_inner(gen, &defer);
+  size_t bytes = gen_max_bytes_iter(gen, &defer);
 
   // If defer is not reset, that means we have a generator that must allocate
   // (i.e. a generator not of the types int, float, or none) that is either at
