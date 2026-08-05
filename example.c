@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "invari.h"
 
@@ -33,7 +32,7 @@ void tree_destroy(struct node *t) {
  * Generator and sample function definitions.
  */
 
-SAMPLE(sample_int, rand_r(seed) % 100)
+SAMPLE(sample_int, rand_r(seed) % 100);
 
 struct gen gen_int = {
     .sample = sample_int,

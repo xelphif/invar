@@ -55,10 +55,10 @@ struct variant _wrap_ptr(void *);
 
 #define wrap(x)                                                                \
   _Generic((x),                                                                \
-             int: _wrap_int,                                                   \
-             double: _wrap_double,                                             \
-             char*: _wrap_str,                                                 \
-             void*: _wrap_ptr)(x)
+      int: _wrap_int,                                                          \
+      double: _wrap_double,                                                    \
+      char *: _wrap_str,                                                       \
+      void *: _wrap_ptr)(x)
 
 #define wrap_i(x) ((struct variant){.T = VARIANT_INT, .i = (x)})
 #define wrap_d(x) ((struct variant){.T = VARIANT_DOUBLE, .d = (x)})
