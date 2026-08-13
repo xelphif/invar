@@ -467,7 +467,7 @@ void result_summary_print(int ac[2]) {
  * Shared memory
  */
 struct shared {
-  struct ce ce;
+  struct ce fault;
   struct arena *b;
   struct report r;
   struct arena a;
@@ -498,7 +498,7 @@ void run(struct property *prop, struct shared *shm) {
     // Populate lookup table using output from generator functions.
     if (prop->space) {
       instance_table_gen(table, &seed);
-      ce_record(shm->b, &shm->ce, table, i);
+      ce_record(shm->b, &shm->fault, table, i);
     }
     double elapsed = timer();
 
@@ -603,7 +603,7 @@ int run_spec(struct specification *spec) {
 
     run_isolated(prop, shm);
 
-    result_print(prop, r, &shm->ce);
+    result_print(prop, r, &shm->fault);
 
     ac[r->ok]++;
 
