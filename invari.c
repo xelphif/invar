@@ -332,6 +332,31 @@ void *apush(struct arena *a, void *src, size_t size) {
   return ptr;
 }
 
+/* Reset arena offset */
+void aclear(struct arena *a) { a->off = 0; }
+
+struct ce {
+  struct instance *i;
+  int it;
+};
+
+/* Copy failed instances to shared memory arena for counterexample reporting in
+ * output. */
+void ce_record(struct arena *a, struct ce *ce, struct instance *A, int it) {
+  ce->it = it;
+
+  int n = 0;
+  for (struct instance *e = A; e->space; e++)
+    n++;
+
+  size_t size = sizeof(struct instance) * (n + 1);
+  ce->i = apush(a, A, size);
+
+  for (int i = 0; i < n; i++) {
+    instance_copy(a, ce->i + i);
+  }
+}
+
 /*
  * report: information to output upon test completion.
  */
@@ -343,10 +368,7 @@ struct report {
   } t;
   int ac[2];
   int signal;
-  struct {
-    struct instance *i;
-    int it;
-  } ce;
+  struct ce ce;
 };
 
 /* Collect test metrics in report. */
@@ -355,24 +377,6 @@ void report_record_result(struct report *r, bool ok, double elapsed, int n) {
   r->ac[ok]++;
   r->t.mean = mean(r->t.mean, elapsed, n);
   r->t.max = max(r->t.max, elapsed);
-}
-
-/* Copy failed instances to shared memory arena for counterexample reporting in
- * output. */
-void report_record_ce(struct arena *a, struct report *r, struct instance *A,
-                      int it) {
-  r->ce.it = it;
-
-  int n = 0;
-  for (struct instance *e = A; e->space; e++)
-    n++;
-
-  size_t size = sizeof(struct instance) * (n + 1);
-  r->ce.i = apush(a, A, size);
-
-  for (int i = 0; i < n; i++) {
-    instance_copy(a, r->ce.i + i);
-  }
 }
 
 /* Process output from waitpid. We consider a crashed process a failure. */
@@ -418,28 +422,34 @@ void result_print_signal(struct report *r) {
   printf("     " SIGNAL " signal:  %s\n", strsignal(r->signal));
 }
 
-void result_print_ce(struct report *r) {
-  printf("\n"
-         "       counterexample\n");
-
-  for (struct instance *e = r->ce.i; e->space; e++) {
+void result_print_ce(struct ce *ce) {
+  for (struct instance *e = ce->i; e->space; e++) {
     printf("         %s = ", e->space->name);
     instance_print(e);
     printf("\n");
   }
 }
 
-void result_print(struct property *prop, struct report *r) {
+void result_print(struct property *prop, struct report *r, struct ce *ce) {
 
   result_print_header(prop, r);
 
-  if (!r->signal)
-    result_print_timing(r);
-  else
-    result_print_signal(r);
+  result_print_timing(r);
 
-  if (r->ce.i)
-    result_print_ce(r);
+  if (r->signal) {
+    result_print_signal(r);
+    if (ce->i) {
+      printf("\n"
+             "       fault\n");
+      result_print_ce(ce);
+    }
+  }
+
+  if (r->ce.i) {
+    printf("\n"
+           "       counterexample\n");
+    result_print_ce(&r->ce);
+  }
 }
 
 void result_summary_print(int ac[2]) {
@@ -458,6 +468,8 @@ void result_summary_print(int ac[2]) {
  * Shared memory
  */
 struct shared {
+  struct ce ce;
+  struct arena *b;
   struct report r;
   struct arena a;
 };
@@ -490,6 +502,7 @@ void run(struct property *prop, struct shared *shm) {
     // Populate lookup table using output from generator functions.
     if (prop->space) {
       instance_table_gen(table, &seed);
+      ce_record(shm->b, &shm->ce, table, i);
     }
     double elapsed = timer();
 
@@ -499,12 +512,13 @@ void run(struct property *prop, struct shared *shm) {
 
     // Record counterexample if this is our first failure.
     if (prop->space && !ok && !r->ce.i) {
-      report_record_ce(a, r, table, i);
+      ce_record(&shm->a, &shm->r.ce, table, i);
     }
 
     report_record_result(r, ok, elapsed, i);
 
     instance_free(table);
+    aclear(shm->b);
 
     if (prop->poststate)
       prop->poststate(ctx);
@@ -563,24 +577,41 @@ int run_spec(struct specification *spec) {
     if (!prop->cfg.iterations && spec->cfg.iterations)
       prop->cfg.iterations = spec->cfg.iterations;
 
-    size_t size = instance_max_bytes(prop->space) + sizeof(struct shared);
+    // We have to calculate the size of the shared memory, we have two arenas
+    // laid out in memory like so:
+    //
+    //      [ CE | * -> ARENA 2 | REPORT | ARENA 1... | ARENA 2... ]
+    //
+    // where we have two arenas, one for standard counterexample storage and the
+    // other to preemptively store an instance table to analyze in the event of
+    // a crash.
+    //
+    // The size of the shared struct holds the metadata for the first arena, but
+    // since we must hold the pointer to the second arena which will be
+    // constructed after the boundary of the first arena, we must adjust our
+    // calculation for this.
+    size_t size_inst = instance_max_bytes(prop->space);
+    size_t size_shm =
+        sizeof(struct shared) + sizeof(struct arena) + (size_inst * 2);
 
-    struct shared *shm = mmap(NULL, size, PROT_READ | PROT_WRITE,
+    struct shared *shm = mmap(NULL, size_shm, PROT_READ | PROT_WRITE,
                               MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 
     if (shm == MAP_FAILED)
       die("failed to map shared memory region");
 
-    shm->a.cap = size - sizeof(struct shared);
+    shm->a.cap = size_inst;
+    shm->b = (void *)shm + sizeof(struct shared) + size_inst;
+    shm->b->cap = size_inst;
     struct report *r = &shm->r;
 
     run_isolated(prop, shm);
 
-    result_print(prop, r);
+    result_print(prop, r, &shm->ce);
 
     ac[r->ok]++;
 
-    if (munmap(shm, size))
+    if (munmap(shm, size_shm))
       die("failed to unmap shared memory region");
   }
 
