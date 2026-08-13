@@ -308,9 +308,7 @@ size_t instance_max_bytes(struct input_space *space) {
   return bytes;
 }
 
-/*
- * Bump allocate in arena.
- */
+/* Bump allocate in arena. */
 void *aalloc(struct arena *a, size_t size) {
   if (a->off + size > a->cap)
     return NULL;
@@ -321,6 +319,7 @@ void *aalloc(struct arena *a, size_t size) {
   return ptr;
 }
 
+/* Push data to arena. Panic if the arena cannot accomodate the data. */
 void *apush(struct arena *a, void *src, size_t size) {
   void *ptr = aalloc(a, size);
 
