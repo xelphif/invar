@@ -481,16 +481,13 @@ void run(struct property *prop, struct shared *shm) {
 
   struct instance *table = NULL;
 
-  struct report *r = &shm->r;
-  struct arena *a = &shm->a;
-
   unsigned int seed = prop->cfg.seed;
 
   // Construct a lookup table for arguments and their instances.
   if (prop->space)
     table = instance_table_init(prop->space);
 
-  *r = (struct report){.ok = true};
+  shm->r = (struct report){.ok = true};
 
   // Evaluate the predicate the amount of times configured, recording the
   // iteration in the report.
@@ -511,11 +508,11 @@ void run(struct property *prop, struct shared *shm) {
     elapsed = timer() - elapsed;
 
     // Record counterexample if this is our first failure.
-    if (prop->space && !ok && !r->ce.i) {
+    if (prop->space && !ok && !shm->r.ce.i) {
       ce_record(&shm->a, &shm->r.ce, table, i);
     }
 
-    report_record_result(r, ok, elapsed, i);
+    report_record_result(&shm->r, ok, elapsed, i);
 
     instance_free(table);
     aclear(shm->b);
