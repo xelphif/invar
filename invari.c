@@ -557,6 +557,8 @@ void run_isolated(struct property *prop, struct shared *shm) {
 
 /*
  * Verify each property in a specification and collect analytics.
+ *
+ * Returns the number of failed properties in the specification.
  */
 int run_spec(struct specification *spec) {
   int ac[2] = {0};
@@ -633,5 +635,5 @@ int run_spec(struct specification *spec) {
   }
 
   result_summary_print(ac);
-  return 0;
+  return ac[false];
 };
