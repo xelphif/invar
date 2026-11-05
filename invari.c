@@ -535,6 +535,8 @@ void run(struct property *prop, struct shared *shm) {
  */
 void run_isolated(struct property *prop, struct shared *shm) {
 
+  fflush(stdout);
+
   pid_t cpid = fork();
 
   if (cpid == 0) {
