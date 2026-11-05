@@ -573,7 +573,7 @@ int run_spec(struct specification *spec) {
     if (!prop->cfg.seed)
       prop->cfg.seed = spec->cfg.seed ^ hash(prop->name);
 
-    // If our propery doesn't have specified iterations but our specification
+    // If our property doesn't have specified iterations but our specification
     // does, use specification value over default value.
     if (!prop->cfg.iterations && spec->cfg.iterations)
       prop->cfg.iterations = spec->cfg.iterations;
