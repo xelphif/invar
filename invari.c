@@ -498,8 +498,11 @@ void run(struct property *prop, struct shared *shm) {
     // Populate lookup table using output from generator functions.
     if (prop->space) {
       instance_table_gen(table, &seed);
-      ce_record(shm->b, &shm->fault, table, i);
+
+      if (prop->cfg.fault_capture)
+        ce_record(shm->b, &shm->fault, table, i);
     }
+
     double elapsed = timer();
 
     ok = prop->predicate(table, ctx);
@@ -514,7 +517,9 @@ void run(struct property *prop, struct shared *shm) {
     report_record_result(&shm->r, ok, elapsed, i);
 
     instance_free(table);
-    aclear(shm->b);
+
+    if (prop->cfg.fault_capture)
+      aclear(shm->b);
 
     if (prop->poststate)
       prop->poststate(ctx);
@@ -573,6 +578,11 @@ int run_spec(struct specification *spec) {
     if (!prop->cfg.iterations && spec->cfg.iterations)
       prop->cfg.iterations = spec->cfg.iterations;
 
+    // If our property doesn't have fault capture specified, but our
+    // specification does, use the specification value.
+    if (!prop->cfg.fault_capture && spec->cfg.fault_capture)
+      prop->cfg.fault_capture = spec->cfg.fault_capture;
+
     // We have to calculate the size of the shared memory, we have two arenas
     // laid out in memory like so:
     //
@@ -586,9 +596,14 @@ int run_spec(struct specification *spec) {
     // since we must hold the pointer to the second arena which will be
     // constructed after the boundary of the first arena, we must adjust our
     // calculation for this.
+
+    // TODO: size shm based on fault capture configuration
     size_t size_inst = instance_max_bytes(prop->space);
-    size_t size_shm =
-        sizeof(struct shared) + sizeof(struct arena) + (size_inst * 2);
+
+    size_t size_shm = sizeof(struct shared) + sizeof(struct arena) + size_inst;
+
+    if (prop->cfg.fault_capture)
+      size_shm += size_inst;
 
     struct shared *shm = mmap(NULL, size_shm, PROT_READ | PROT_WRITE,
                               MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -597,9 +612,12 @@ int run_spec(struct specification *spec) {
       die("failed to map shared memory region");
 
     shm->a.cap = size_inst;
-    shm->b = (void *)shm + sizeof(struct shared) + size_inst;
-    shm->b->cap = size_inst;
     struct report *r = &shm->r;
+
+    if (prop->cfg.fault_capture) {
+      shm->b = (void *)shm + sizeof(struct shared) + size_inst;
+      shm->b->cap = size_inst;
+    }
 
     run_isolated(prop, shm);
 

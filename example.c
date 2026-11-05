@@ -160,8 +160,14 @@ PREDICATE(add_tree_example) {
 }
 
 PREDICATE(add_crash_example) {
-  abort();
-  return true;
+  int a = given_int(table, "a");
+
+  bool is_even = a % 2 == 0;
+
+  if (is_even && a < 50)
+    abort();
+
+  return !is_even;
 }
 
 struct property props[] = {
@@ -233,6 +239,10 @@ struct property props[] = {
         .name = "crash_example",
         .predicate = add_crash_example,
         .space = SPACE{{.name = "a", GEN(gen_int)}, {0}},
+        .cfg =
+            {
+                .fault_capture = true,
+            },
     },
     {0},
 };

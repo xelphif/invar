@@ -136,6 +136,7 @@ struct variant instance_get(struct instance *A, char *k);
 struct config {
   unsigned int seed;
   int iterations;
+  bool fault_capture;
   size_t alloc;
 };
 
