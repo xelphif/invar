@@ -516,7 +516,8 @@ void run(struct property *prop, struct shared *shm) {
 
     report_record_result(&shm->r, ok, elapsed, i);
 
-    instance_free(table);
+    if (table)
+      instance_free(table);
 
     if (prop->cfg.fault_capture)
       aclear(shm->b);
