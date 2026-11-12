@@ -1,260 +1,88 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "invari.h"
+#include "invar.h"
 
 /*
- * Primitive tree data structure.
+ * Generators
  */
-struct node {
-  int n;
-  struct node *l;
-  struct node *r;
-};
+GENERATOR(void *, gen_v3) {
+  unsigned int *v = malloc(sizeof(int) * 3);
+  for (int i = 0; i < 3; i++)
+    v[i] = draw_u32(t);
 
-void *tree_init(int n) {
-  struct node *t = malloc(sizeof(struct node));
-  t->n = n;
-  return t;
-}
-
-void tree_destroy(struct node *t) {
-  if (!t)
-    return;
-
-  tree_destroy(t->l);
-  tree_destroy(t->r);
-
-  free(t);
+  defer(s, NULL, v);
+  return v;
 }
 
 /*
- * Generator and sample function definitions.
+ * Properties
  */
-
-SAMPLE(sample_int, rand_r(seed) % 100);
-
-struct gen gen_int = {
-    .sample = sample_int,
-};
-
-/*
- * Generate a random tree of maximum 'size' nodes.
- */
-struct node *sample_tree(struct gen *self, unsigned int *seed, int size) {
-  if (!size)
-    return NULL;
-
-  struct node *t = tree_init(rand_r(seed) % 100);
-  size--;
-
-  int lsize = 0, rsize = 0;
-  splitr(size, seed, &lsize, &rsize);
-
-  t->l = bernoulli(self->p, seed) ? sample_tree(self, seed, lsize) : NULL;
-  t->r = bernoulli(self->p, seed) ? sample_tree(self, seed, rsize) : NULL;
-
-  return t;
+PROPERTY(must_pass) {
+  uint64_t n = draw_u64(t);
+  return true;
 }
 
-SAMPLE(sample_tree_wrap, (void *)sample_tree(self, seed, size))
+PROPERTY(must_fail_first) { return false; }
+PROPERTY(must_fail_later) { return draw_u8(t) < 250; }
 
-struct gen gen_tree = {
-    .sample = sample_tree_wrap,
-    .size = 1000,
-    .p = 20,
-    .types = TYPES{sizeof(struct node), -1},
-};
+PROPERTY(must_abort) { abort(); }
 
-/*
- * Copy tree to shared memory for counterexample reporting.
- */
-void *tree_copy_inner(struct arena *a, struct node *t) {
-  if (!t)
-    return NULL;
+PROPERTY(must_segv_later) {
+  int *ptr = NULL, n = 0;
+  if (draw_u8(t) > 250) (void)*(volatile int *)NULL;
 
-  struct node *ptr = apush(a, t, sizeof(struct node));
-
-  ptr->l = tree_copy_inner(a, t->l);
-  ptr->r = tree_copy_inner(a, t->r);
-
-  return ptr;
+  return true;
 }
 
-int tree_copy(struct arena *a, struct variant *v) {
-  v->ptr = tree_copy_inner(a, v->ptr);
-  return 1;
+PROPERTY(must_give_up) {
+  for (int i = 0; i < 5; i++)
+    draw_u8(t);
+
+  return true;
 }
 
-void tree_free(struct variant *v) { tree_destroy(v->ptr); }
+PROPERTY(must_discard_some) {
+  if (draw_u8(t) < 32)
+    for (int i = 0; i < 5; i++)
+      draw_u8(t);
 
-/*
- * Print tree to render for counterexample.
- */
-void tree_print_inner(struct node *t) {
-  if (!t) {
-    printf("nil");
-    return;
-  }
-
-  printf("%d", t->n);
-
-  if (!t->l && !t->r)
-    return;
-
-  printf(" (");
-  tree_print_inner(t->l);
-  printf(" ");
-  tree_print_inner(t->r);
-  printf(")");
-}
-void tree_print(struct variant *v) { tree_print_inner(v->ptr); }
-
-/*
- * Addition function for testing.
- */
-int add(int a, int b) { return a + b; }
-
-/*
- * Predicate definitions.
- */
-PREDICATE(add_commutativity) {
-
-  // Data can be retrieved from the variant look out table.
-  int a = given_int(table, "a");
-  int b = given_int(table, "b");
-
-  return add(a, b) == add(b, a);
+  return true;
 }
 
-PREDICATE(add_associativity) {
-  int a = given_int(table, "a");
-  int b = given_int(table, "b");
-  int c = given_int(table, "c");
-
-  return add(add(a, b), c) == add(a, add(b, c));
+PROPERTY(must_defer) {
+  int *v = gen_v3(t, s);
+  (void)v;
+  return true;
 }
 
-PREDICATE(add_identity) {
-  int a = given_int(table, "a");
-
-  return add(a, 0) == a;
-}
-
-PREDICATE(add_inverse) {
-  int a = given_int(table, "a");
-
-  return add(a, -a) == 0;
-}
-
-PREDICATE(add_less_than_50) {
-  int a = given_int(table, "a");
-
-  return a < 50;
-}
-
-PREDICATE(add_tree_example) {
-  struct node *t = given_ptr(table, "tree");
-
-  return false;
-}
-
-PREDICATE(add_crash_example) {
-  int a = given_int(table, "a");
-
-  bool is_even = a % 2 == 0;
-
-  if (is_even && a < 50)
-    abort();
-
-  return !is_even;
+PROPERTY(must_exit) {
+  exit(0);
+  return true;
 }
 
 struct property props[] = {
-    {
-        .name = "commutativity", /* Name of the property for reporting. */
-        .predicate = add_commutativity, /* Predicate to be tested. */
-        .space =
-            SPACE{
-                {.name = "a", GEN(gen_int)},
-                {.name = "b", GEN(gen_int)},
-                {0},
-            },
-
-    },
-    {
-        .name = "associativity",
-        .predicate = add_associativity,
-        .space =
-            SPACE{
-                {.name = "a", GEN(gen_int)},
-                {.name = "b", GEN(gen_int)},
-                {.name = "c", GEN(gen_int)},
-                {0},
-            },
-    },
-    {
-        .name = "identity",
-        .predicate = add_identity,
-        .space = SPACE{{.name = "a", GEN(gen_int)}, {0}},
-        .cfg =
-            {
-                .iterations = 150,
-            },
-    },
-    {
-        .name = "inverse",
-        .predicate = add_inverse,
-        .space = SPACE{{.name = "a", GEN(gen_int)}, {0}},
-    },
-    {
-        .name = "less_than_50",
-        .predicate = add_less_than_50,
-        .space =
-            SPACE{
-                {.name = "a", GEN(gen_int)},
-                {.name = "str", FIXED_STR("Hello, world!")},
-                {.name = "ptr", FIXED_PTR((void *)0xdeadbeef)},
-                {0},
-            },
-        .cfg =
-            {
-                .seed = 0x18856732,
-            },
-    },
-    {
-        .name = "tree_print_example",
-        .predicate = add_tree_example,
-        .space =
-            SPACE{
-                {.name = "tree",
-                 GEN(gen_tree),
-                 .copy = tree_copy,
-                 .free = tree_free,
-                 .print = tree_print},
-                {0},
-            },
-    },
-    {
-        .name = "crash_example",
-        .predicate = add_crash_example,
-        .space = SPACE{{.name = "a", GEN(gen_int)}, {0}},
-        .cfg =
-            {
-                .fault_capture = true,
-            },
-    },
+    PROP(must_pass),
+    PROP(must_fail_first),
+    PROP(must_fail_later),
+    PROP(must_abort),
+    PROP(must_segv_later),
+    PROP(must_give_up, .capacity = 4),
+    PROP(must_discard_some, .capacity = 4),
+    PROP(must_defer),
+    PROP(must_exit),
     {0},
+
 };
 
 struct specification spec = {
-    .name = "test",
+    .name  = "test_spec",
     .props = props,
+    .cfg =
+        {
+            .seed       = 0xdeadbeefdeadbeef,
+            .iterations = 100,
+        },
 };
 
-int main() {
-
-  run_spec(&spec);
-
-  return 0;
-}
+int main() { return verify(&spec); }

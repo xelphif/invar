@@ -1,0 +1,7 @@
+BasedOnStyle: LLVM
+AlignConsecutiveDeclarations: Consecutive
+AlignConsecutiveAssignments: Consecutive
+AlignConsecutiveMacros: Consecutive
+AlignTrailingComments: true
+AlignEscapedNewlines: Left
+AllowShortIfStatementsOnASingleLine: WithoutElse
