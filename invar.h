@@ -8,7 +8,8 @@
 #define INVAR_CONFIG_FIELDS(X) \
   X(uint64_t, seed)            \
   X(int, iterations)           \
-  X(size_t, capacity)
+  X(size_t, capacity)          \
+  X(unsigned int, timeout)
 
 struct config {
 #define X(type, name) type name;

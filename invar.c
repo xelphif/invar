@@ -331,8 +331,13 @@ static inline enum verdict run(struct tape *t, struct result *r,
     r->iter = i;
     tseed(t, mix(prop->cfg.seed, i));
 
-    struct scope s  = {0};
-    bool         ok = prop->predicate(t, &s);
+    // Set timeout if configured for property.
+    if (prop->cfg.timeout) alarm(prop->cfg.timeout);
+
+    struct scope s = {0};
+
+    bool ok = prop->predicate(t, &s);
+
     unwind(s);
 
     if (t->overrun) {
