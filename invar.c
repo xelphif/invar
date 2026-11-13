@@ -52,13 +52,19 @@ static noreturn void die(const char *fmt, ...) {
  * Output
  */
 
-/* Exit statuses for trials to be stored in a result. FAIL and OK must stay at
- * their indexes of 0 and 1 respectively in order to preserve boolean indexing.
- */
-enum exit {
-  FAIL,
-  OK,
-  SKIP,
+struct result {
+  bool finished;
+
+  /* Exit statuses for trials to be stored in a result. FAIL and OK must stay at
+   * their indexes of 0 and 1 respectively in order to preserve boolean
+   * indexing.
+   */
+  enum verdict { FAIL, OK, SKIP } verdict;
+
+  int ac[3];
+  int iter;
+
+  struct status status;
 };
 
 struct result_str {
@@ -72,14 +78,6 @@ static struct result_str result_str[] = {
     [SKIP] = {"SKIP", YELLOW},
 };
 
-struct result {
-  enum exit exit;
-
-  int ac[3];
-  int iter;
-  int signal;
-};
-
 static inline void result_print_header(struct property *prop,
                                        struct result   *r) {
   int passed  = r->ac[OK];
@@ -91,7 +89,7 @@ static inline void result_print_header(struct property *prop,
          "  %s%-4s%s %s%s%s\n"
          "       %d out of %d passed, %d skipped\n"
          "       seed:    0x%016" PRIx64,
-         result_str[r->exit].color, result_str[r->exit].str, RESET, BOLD,
+         result_str[r->verdict].color, result_str[r->verdict].str, RESET, BOLD,
          prop->name, RESET, passed, total, skipped, prop->cfg.seed);
 
   if (r->ac[FAIL]) printf(", iteration %d", r->iter);
@@ -287,8 +285,8 @@ static inline void unwind(struct scope s) {
 /*
  * Isolate function in order to prevent predicates from crashing the runners.
  */
-typedef enum exit (*runner_fn)(struct tape *t, struct result *r,
-                               struct property *prop);
+typedef enum verdict (*runner_fn)(struct tape *t, struct result *r,
+                                  struct property *prop);
 
 static inline int isolate(runner_fn fn, struct shared *shm,
                           struct property *prop) {
@@ -308,12 +306,15 @@ static inline int isolate(runner_fn fn, struct shared *shm,
   waitpid(cpid, &status, 0);
 
   return WIFSIGNALED(status) ? WTERMSIG(status) : 0;
+
+static inline enum verdict setverdict(struct result *r, enum verdict v) {
+  return (r->finished = true, r->verdict = v);
 }
 
 /* Run predicate based on seed and iterations, returning on first failure for
  * potential shrinking. */
-static inline enum exit run(struct tape *t, struct result *r,
-                            struct property *prop) {
+static inline enum verdict run(struct tape *t, struct result *r,
+                               struct property *prop) {
   for (int i = 0, passed = 0; passed < prop->cfg.iterations; i++) {
 
     r->iter = i;
@@ -324,19 +325,19 @@ static inline enum exit run(struct tape *t, struct result *r,
     unwind(s);
 
     if (t->overrun) {
-      if (++r->ac[SKIP] == prop->cfg.iterations) return SKIP;
+      if (++r->ac[SKIP] == prop->cfg.iterations) return setverdict(r, SKIP);
 
       continue;
     }
 
     r->ac[ok]++;
 
-    if (!ok) return FAIL;
+    if (!ok) return setverdict(r, FAIL);
 
     passed++;
   }
 
-  return OK;
+  return setverdict(r, OK);
 }
 
 /*
@@ -379,12 +380,12 @@ int verify(const struct specification *spec) {
 
     shm->t.cap = p.cfg.capacity;
 
-    if ((shm->r.signal = isolate(run, shm, &p))) {
-      shm->r.ac[FAIL]++;
-      shm->r.exit = FAIL;
+    if (!r->finished) {
+      r->ac[FAIL]++;
+      r->verdict = FAIL;
     }
 
-    ac[shm->r.exit]++;
+    ac[r->verdict]++;
 
     result_print(&p, &shm->r);
 
