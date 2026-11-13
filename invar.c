@@ -51,6 +51,10 @@ static noreturn void die(const char *fmt, ...) {
 /*
  * Output
  */
+struct status {
+  bool signaled;
+  int  code;
+};
 
 struct result {
   bool finished;
@@ -102,10 +106,19 @@ static inline void result_print_signal(int signal) {
   printf("     " SIGNAL " signal:  %s\n", strsignal(signal));
 }
 
+#define EXITED YELLOW "!" RESET
+static inline void result_print_exit(int code) {
+  printf("     " EXITED " exited:  predicate exited early with code %d\n",
+         code);
+}
+
 static inline void result_print(struct property *prop, struct result *r) {
   result_print_header(prop, r);
 
-  if (r->signal) result_print_signal(r->signal);
+  if (r->status.signaled)
+    result_print_signal(r->status.code);
+  else if (!r->finished)
+    result_print_exit(r->status.code);
 }
 
 static inline void result_print_summary(int ac[3]) {
@@ -288,8 +301,8 @@ static inline void unwind(struct scope s) {
 typedef enum verdict (*runner_fn)(struct tape *t, struct result *r,
                                   struct property *prop);
 
-static inline int isolate(runner_fn fn, struct shared *shm,
-                          struct property *prop) {
+static inline struct status isolate(runner_fn fn, struct tape *t,
+                                    struct result *r, struct property *prop) {
 
   fflush(stdout);
 
@@ -305,7 +318,13 @@ static inline int isolate(runner_fn fn, struct shared *shm,
   int status;
   waitpid(cpid, &status, 0);
 
-  return WIFSIGNALED(status) ? WTERMSIG(status) : 0;
+  struct status s = {0};
+
+  s.signaled = WIFSIGNALED(status);
+  s.code     = s.signaled ? WTERMSIG(status) : WEXITSTATUS(status);
+
+  return s;
+}
 
 static inline enum verdict setverdict(struct result *r, enum verdict v) {
   return (r->finished = true, r->verdict = v);
