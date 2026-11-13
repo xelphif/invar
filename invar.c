@@ -253,14 +253,6 @@ int64_t draw_range(struct tape *t, int64_t min, int64_t max) {
 }
 
 /*
- * Shared memory.
- */
-struct shared {
-  struct result r;
-  struct tape   t;
-};
-
-/*
  * Memory lifetime management.
  */
 struct deferral {
@@ -309,7 +301,7 @@ static inline struct status isolate(runner_fn fn, struct tape *t,
   pid_t cpid = fork();
 
   if (cpid == 0) {
-    shm->r.exit = fn(&shm->t, &shm->r, prop);
+    fn(t, r, prop);
     exit(EXIT_SUCCESS);
   }
 
@@ -359,6 +351,12 @@ static inline enum verdict run(struct tape *t, struct result *r,
   return setverdict(r, OK);
 }
 
+/* Byte offset of the tape in the shared region: the result's size rounded up
+ * to the tape's alignment. */
+constexpr size_t TAPE_OFFSET =
+    (sizeof(struct result) + alignof(struct tape) - 1) / alignof(struct tape) *
+    alignof(struct tape);
+
 /*
  * Verify each property in a specification.
  */
@@ -390,14 +388,22 @@ int verify(const struct specification *spec) {
     if (!prop->cfg.seed) p.cfg.seed ^= hash(p.name);
 
     // Map shared memory.
-    size_t size =
-        offsetof(struct shared, t.w) + p.cfg.capacity * sizeof(uint64_t);
-    struct shared *shm = mmap(NULL, size, PROT_READ | PROT_WRITE,
-                              MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    size_t size = TAPE_OFFSET + offsetof(struct tape, w) +
+                  p.cfg.capacity * sizeof(uint64_t);
+
+    char *shm = mmap(NULL, size, PROT_READ | PROT_WRITE,
+                     MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 
     if (shm == MAP_FAILED) die("failed to map shared memory region");
 
-    shm->t.cap = p.cfg.capacity;
+    struct result *r = (struct result *)shm;
+    struct tape   *t = (struct tape *)(shm + TAPE_OFFSET);
+
+    t->cap = p.cfg.capacity;
+
+    // If the property returns nonzero or predicate exited early, we count as a
+    // failure.
+    r->status = isolate(run, t, r, &p);
 
     if (!r->finished) {
       r->ac[FAIL]++;
@@ -406,7 +412,7 @@ int verify(const struct specification *spec) {
 
     ac[r->verdict]++;
 
-    result_print(&p, &shm->r);
+    result_print(&p, r);
 
     if (munmap(shm, size)) die("failed to unmap shared memory region");
   }
