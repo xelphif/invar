@@ -19,7 +19,7 @@ GENERATOR(void *, gen_v3) {
  * Properties
  */
 PROPERTY(must_pass) {
-  uint64_t n = draw_u64(t);
+  draw_u64(t);
   return true;
 }
 
@@ -29,7 +29,6 @@ PROPERTY(must_fail_later) { return draw_u8(t) < 250; }
 PROPERTY(must_abort) { abort(); }
 
 PROPERTY(must_segv_later) {
-  int *ptr = NULL, n = 0;
   if (draw_u8(t) > 250) (void)*(volatile int *)NULL;
 
   return true;
