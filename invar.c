@@ -328,6 +328,7 @@ static inline enum verdict run(struct tape *t, struct result *r,
                                struct property *prop) {
   for (int i = 0, passed = 0; passed < prop->cfg.iterations; i++) {
 
+    // Record iteration before execution for crash reporting.
     r->iter = i;
     tseed(t, mix(prop->cfg.seed, i));
 
@@ -340,6 +341,7 @@ static inline enum verdict run(struct tape *t, struct result *r,
 
     unwind(s);
 
+    // If we discard too many trials, we give up on the property.
     if (t->overrun) {
       if (++r->ac[SKIP] == prop->cfg.iterations) return setverdict(r, SKIP);
 
@@ -384,7 +386,8 @@ int verify(const struct specification *spec) {
   for (struct property *prop = spec->props; prop->predicate != NULL; prop++) {
 
     struct property p = *prop;
-    p.cfg             = overlay(c, prop->cfg);
+
+    p.cfg = overlay(c, prop->cfg);
 
     // If the property didn't have a seed, make sure we xor in a hash of the
     // property name in order to make sure each property has a different base
