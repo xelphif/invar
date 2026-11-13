@@ -14,7 +14,6 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdnoreturn.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/random.h>
@@ -36,7 +35,8 @@
 /*
  * Error reporting.
  */
-static noreturn void die(const char *fmt, ...) {
+[[noreturn]]
+static void die(const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
 

@@ -1,5 +1,5 @@
 CC     = cc
-CFLAGS = -std=c17 -Wall -Wextra -Wpedantic -Wshadow -Werror -g
+CFLAGS = -std=gnu23 -Wall -Wextra -Wpedantic -Wshadow -Werror -g
 SAN    = -fsanitize=address,undefined
 
 all: example

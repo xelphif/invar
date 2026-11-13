@@ -44,9 +44,8 @@ struct property {
 
 /* Define a property. The body receives `t` (randomness abstraction) and
  * `s` (the scope for defer). Return true if the property holds. */
-#define PROPERTY(name)                               \
-  bool name(struct tape  *t __attribute__((unused)), \
-            struct scope *s __attribute__((unused)))
+#define PROPERTY(name) \
+  bool name(struct tape *t [[maybe_unused]], struct scope *s [[maybe_unused]])
 
 /* Define a property in the property table. Function name is stringized, and
  * config parameter can be passed as variable args. */
@@ -59,7 +58,7 @@ struct property {
  * and `s` (scope for free deferrals). Optionally, extra arguments can be
  * defined in variable args. */
 #define GENERATOR(type, name, ...) \
-  type name(struct tape *t, struct scope *s, ##__VA_ARGS__)
+  type name(struct tape *t, struct scope *s __VA_OPT__(, ) __VA_ARGS__)
 
 /*
  * specification: full definition of the properties of an object.
