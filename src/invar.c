@@ -51,24 +51,22 @@ static void die(const char *fmt, ...) {
 /*
  * Output
  */
-struct status {
-  bool signaled;
-  int  code;
-};
-
 struct result {
-  bool finished;
-
   /* Exit statuses for trials to be stored in a result. FAIL and OK must stay at
    * their indexes of 0 and 1 respectively in order to preserve boolean
    * indexing.
    */
-  enum verdict { FAIL, OK, SKIP } verdict;
+  enum verdict { FAIL, OK, SKIP } v;
 
   int ac[3];
-  int iter;
 
-  struct status status;
+  struct status {
+    bool signaled;
+    bool finished;
+    int  code;
+  } s;
+
+  int iter;
 };
 
 struct result_str {
@@ -93,8 +91,8 @@ static inline void result_print_header(struct property *prop,
          "  %s%-4s%s %s%s%s\n"
          "       %d out of %d passed, %d skipped\n"
          "       seed:    0x%016" PRIx64,
-         result_str[r->verdict].color, result_str[r->verdict].str, RESET, BOLD,
-         prop->name, RESET, passed, total, skipped, prop->cfg.seed);
+         result_str[r->v].color, result_str[r->v].str, RESET, BOLD, prop->name,
+         RESET, passed, total, skipped, prop->cfg.seed);
 
   if (r->ac[FAIL]) printf(", iteration %d", r->iter);
 
@@ -115,10 +113,10 @@ static inline void result_print_exit(int code) {
 static inline void result_print(struct property *prop, struct result *r) {
   result_print_header(prop, r);
 
-  if (r->status.signaled)
-    result_print_signal(r->status.code);
-  else if (!r->finished)
-    result_print_exit(r->status.code);
+  if (r->s.signaled)
+    result_print_signal(r->s.code);
+  else if (!r->s.finished)
+    result_print_exit(r->s.code);
 }
 
 static inline void result_print_summary(int ac[3]) {
@@ -290,11 +288,11 @@ static inline void unwind(struct scope s) {
 /*
  * Isolate function in order to prevent predicates from crashing the runners.
  */
-typedef enum verdict (*runner_fn)(struct tape *t, struct result *r,
-                                  struct property *prop);
+typedef void (*runner_fn)(struct tape *t, struct result *r,
+                          struct property *prop);
 
-static inline struct status isolate(runner_fn fn, struct tape *t,
-                                    struct result *r, struct property *prop) {
+static void isolate(runner_fn fn, struct tape *t, struct result *r,
+                    struct property *prop) {
 
   fflush(stdout);
 
@@ -302,6 +300,7 @@ static inline struct status isolate(runner_fn fn, struct tape *t,
 
   if (cpid == 0) {
     fn(t, r, prop);
+    r->s.finished = true;
     exit(EXIT_SUCCESS);
   }
 
@@ -310,22 +309,14 @@ static inline struct status isolate(runner_fn fn, struct tape *t,
   int status;
   waitpid(cpid, &status, 0);
 
-  struct status s = {0};
-
-  s.signaled = WIFSIGNALED(status);
-  s.code     = s.signaled ? WTERMSIG(status) : WEXITSTATUS(status);
-
-  return s;
-}
-
-static inline enum verdict setverdict(struct result *r, enum verdict v) {
-  return (r->finished = true, r->verdict = v);
+  r->s.signaled = WIFSIGNALED(status);
+  r->s.code     = r->s.signaled ? WTERMSIG(status) : WEXITSTATUS(status);
 }
 
 /* Run predicate based on seed and iterations, returning on first failure for
  * potential shrinking. */
-static inline enum verdict run(struct tape *t, struct result *r,
-                               struct property *prop) {
+static void run(struct tape *t, struct result *r, struct property *prop) {
+
   for (int i = 0, passed = 0; passed < prop->cfg.iterations; i++) {
 
     // Record iteration before execution for crash reporting.
@@ -343,19 +334,26 @@ static inline enum verdict run(struct tape *t, struct result *r,
 
     // If we discard too many trials, we give up on the property.
     if (t->overrun) {
-      if (++r->ac[SKIP] == prop->cfg.iterations) return setverdict(r, SKIP);
+      if (++r->ac[SKIP] == prop->cfg.iterations) {
+        r->v = SKIP;
+        return;
+      }
 
       continue;
     }
 
     r->ac[ok]++;
 
-    if (!ok) return setverdict(r, FAIL);
+    if (!ok) {
+      r->v = FAIL;
+      return;
+    }
 
     passed++;
   }
 
-  return setverdict(r, OK);
+  r->v = OK;
+  return;
 }
 
 /* Byte offset of the tape in the shared region: the result's size rounded up
@@ -411,19 +409,25 @@ int verify(const struct specification *spec) {
 
     // If the property returns nonzero or predicate exited early, we count as a
     // failure.
-    r->status = isolate(run, t, r, &p);
-
-    if (!r->finished) {
-      r->ac[FAIL]++;
-      r->verdict = FAIL;
+    if (p.cfg.inprocess) {
+      run(t, r, &p);
+      r->s.finished = true;
+    } else {
+      isolate(run, t, r, &p);
     }
 
-    ac[r->verdict]++;
+    if (!r->s.finished) {
+      r->ac[FAIL]++;
+      r->v = FAIL;
+    }
+
+    ac[r->v]++;
 
     result_print(&p, r);
 
     if (munmap(shm, size)) die("failed to unmap shared memory region");
   }
+
   result_print_summary(ac);
 
   return ac[FAIL] || ac[SKIP];

@@ -9,6 +9,7 @@
   X(uint64_t, seed)            \
   X(int, iterations)           \
   X(size_t, capacity)          \
+  X(bool, inprocess)           \
   X(unsigned int, timeout)
 
 struct config {
