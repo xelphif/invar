@@ -28,12 +28,6 @@
 #define PROP_DEFAULT_ITER    100
 #define PROP_DEFAULT_REPLAYS 10
 
-#define RESET  "\033[0m"
-#define BOLD   "\033[1m"
-#define RED    "\033[1;31m"
-#define GREEN  "\033[1;32m"
-#define YELLOW "\033[1;33m"
-
 struct deferral {
   void (*fn)(void *);
   void            *ptr;
@@ -58,12 +52,11 @@ struct context {
 /*
  * Error reporting.
  */
-[[noreturn]]
-static void die(const char *fmt, ...) {
+[[noreturn]] static void die(const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
 
-  fprintf(stderr, RED "[ERR]" RESET " ");
+  fprintf(stderr, "[ERR] ");
   vfprintf(stderr, fmt, args);
   fputc('\n', stderr);
 
@@ -74,6 +67,23 @@ static void die(const char *fmt, ...) {
 /*
  * Output
  */
+
+enum color {
+  RESET,
+  BOLD,
+  RED,
+  GREEN,
+  YELLOW,
+};
+
+static const char *colors[] = {
+    [RESET] = "\033[0m",    [BOLD] = "\033[1m",      [RED] = "\033[1;31m",
+    [GREEN] = "\033[1;32m", [YELLOW] = "\033[1;33m",
+};
+
+static bool        color;
+static const char *colorstr(enum color c) { return color ? colors[c] : ""; }
+
 struct result {
   /* Exit statuses for trials to be stored in a result. FAIL and OK must stay at
    * their indexes of 0 and 1 respectively in order to preserve boolean
@@ -104,7 +114,7 @@ struct shared {
 
 struct result_str {
   const char *str;
-  const char *color;
+  enum color  c;
 };
 
 static struct result_str result_str[] = {
@@ -113,9 +123,6 @@ static struct result_str result_str[] = {
     [SKIP] = {"SKIP", YELLOW},
 };
 
-#define ERROR RED "!" RESET
-#define WARN  YELLOW "!" RESET
-
 static inline void result_print_header(struct property *prop, struct result *r,
                                        struct stats *s, bool flaky) {
   int passed  = s->ac[OK];
@@ -123,15 +130,21 @@ static inline void result_print_header(struct property *prop, struct result *r,
   int skipped = s->ac[SKIP];
   int total   = passed + failed;
 
-  const char *symbol    = flaky ? WARN : " ";
-  const char *flaky_str = flaky ? " (" YELLOW "flaky" RESET ")" : "";
+  const char *symbol = flaky ? "!" : " ";
 
   printf("\n"
-         "  %s%-4s%s %s%s%s\n"
-         "     %s %d out of %d passed, %d skipped%s\n"
-         "       seed:    0x%016" PRIx64,
-         result_str[r->v].color, result_str[r->v].str, RESET, BOLD, prop->name,
-         RESET, symbol, passed, total, skipped, flaky_str, prop->cfg.seed);
+         "  %s%-4s%s %s%s%s\n",
+         colorstr(result_str[r->v].c), result_str[r->v].str, colorstr(RESET),
+         colorstr(BOLD), prop->name, colorstr(RESET));
+
+  printf("     %s%s%s %d out of %d passed, %d skipped", colorstr(YELLOW),
+         symbol, colorstr(RESET), passed, total, skipped);
+
+  if (flaky) printf(" (%sflaky%s)", colorstr(YELLOW), colorstr(RESET));
+
+  printf("\n");
+
+  printf("       seed:    0x%016" PRIx64, prop->cfg.seed);
 
   if (s->ac[FAIL]) printf(", iteration %d", s->iter);
 
@@ -139,11 +152,13 @@ static inline void result_print_header(struct property *prop, struct result *r,
 }
 
 static inline void result_print_signal(int signal) {
-  printf("     " ERROR " signal:  %s\n", strsignal(signal));
+  printf("     %s!%s signal:  %s\n", colorstr(RED), colorstr(RESET),
+         strsignal(signal));
 }
 
 static inline void result_print_exit(int code) {
-  printf("     " WARN " exited:  predicate exited early with code %d\n", code);
+  printf("     %s!%s exited:  predicate exited early with code %d\n",
+         colorstr(YELLOW), colorstr(RESET), code);
 }
 
 static inline void result_print(struct property *prop, struct result *r,
@@ -167,7 +182,8 @@ static inline void result_print_summary(int ac[3]) {
          "       failed:  %d\n"
          "       skipped: %d\n"
          "       total:   %d\n",
-         BOLD, RESET, passed, failed, skipped, passed + failed + skipped);
+         colorstr(BOLD), colorstr(RESET), passed, failed, skipped,
+         passed + failed + skipped);
 }
 
 /*
@@ -649,6 +665,13 @@ static enum verdict check(struct config c, struct property *prop) {
  * Verify a specification.
  */
 int verify(const struct specification *spec) {
+
+  const char *env = getenv("NO_COLOR");
+  if (env && env[0] != '\0')
+    color = false;
+  else
+    color = isatty(STDOUT_FILENO);
+
   int ac[3] = {0};
 
   // Calculate effective config based on the following precedence:
