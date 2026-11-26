@@ -125,28 +125,28 @@ static struct result_str result_str[] = {
 
 static inline void result_print_header(struct property *prop, struct result *r,
                                        struct stats *s, bool flaky) {
-  int passed  = s->ac[OK];
-  int failed  = s->ac[FAIL];
   int skipped = s->ac[SKIP];
-  int total   = passed + failed;
 
-  const char *symbol = flaky ? "!" : " ";
+  printf("  %s%-4s%s %s%s%s", colorstr(result_str[r->v].c),
+         result_str[r->v].str, colorstr(RESET), colorstr(BOLD), prop->name,
+         colorstr(RESET));
 
-  printf("\n"
-         "  %s%-4s%s %s%s%s\n",
-         colorstr(result_str[r->v].c), result_str[r->v].str, colorstr(RESET),
-         colorstr(BOLD), prop->name, colorstr(RESET));
+  if (r->v == OK) {
+    printf("\n");
+    return;
+  }
 
-  printf("     %s%s%s %d out of %d passed, %d skipped", colorstr(YELLOW),
-         symbol, colorstr(RESET), passed, total, skipped);
+  if (r->v == SKIP) printf(" -- gave up after %d discards", skipped);
 
   if (flaky) printf(" (%sflaky%s)", colorstr(YELLOW), colorstr(RESET));
 
   printf("\n");
 
+  if (r->v == SKIP) return;
+
   printf("       seed:    0x%016" PRIx64, prop->cfg.seed);
 
-  if (s->ac[FAIL]) printf(", iteration %d", s->iter);
+  printf(", iteration %d", s->iter);
 
   printf("\n");
 }
