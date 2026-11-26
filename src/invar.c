@@ -384,6 +384,20 @@ static void run(struct trial *ctx) {
   return;
 }
 
+/* Resolve our effective config for our properties */
+static struct config cfgresolve(struct config c, struct property *p) {
+
+  struct config cfg = overlay(c, p->cfg);
+
+  // If the property didn't have a seed, make sure we xor in a hash of the
+  // property name in order to make sure each property has a different base
+  // seed (and using the property name means we don't have to rely on ordering
+  // in the specification file)
+  if (!p->cfg.seed) cfg.seed ^= hash(p->name);
+
+  return cfg;
+}
+
 /* Byte offset of the tape in the shared region: the result's size rounded up
  * to the tape's alignment. */
 constexpr size_t TAPE_OFFSET =
@@ -444,13 +458,7 @@ int verify(const struct specification *spec) {
 
     struct property p = *prop;
 
-    p.cfg = overlay(c, prop->cfg);
-
-    // If the property didn't have a seed, make sure we xor in a hash of the
-    // property name in order to make sure each property has a different base
-    // seed (and using the property name means we don't have to rely on ordering
-    // in the specification file)
-    if (!prop->cfg.seed) p.cfg.seed ^= hash(p.name);
+    p.cfg = cfgresolve(c, prop);
 
     struct trial   ctx = shminit(&p);
     struct result *r   = ctx.r;
