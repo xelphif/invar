@@ -63,7 +63,7 @@ PROPERTY(must_exit) {
 
 PROPERTY(must_be_flaky) {
   unsigned char b;
-  getrandom(&b, 1, 0);
+  if (getrandom(&b, 1, 0) < 0) abort();
   return b & 1;
 }
 
@@ -72,7 +72,7 @@ struct property props[] = {
     PROP(must_fail_first),
     PROP(must_fail_later),
     PROP(must_abort),
-    PROP(must_segv_later, .replays = 1),
+    PROP(must_segv_later, .replays = -1),
     PROP(must_give_up, .capacity = 4),
     PROP(must_discard_some, .capacity = 4),
     PROP(must_defer),

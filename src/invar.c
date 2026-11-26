@@ -23,7 +23,8 @@
 
 #include "invar.h"
 
-#define TAPE_DEFAULT_CAP     8192
+#define TAPE_DEFAULT_CAP 8192
+
 #define PROP_DEFAULT_ITER    100
 #define PROP_DEFAULT_REPLAYS 10
 
@@ -101,8 +102,8 @@ static inline void result_print_header(struct property *prop, struct result *r,
   int skipped = s->ac[SKIP];
   int total   = passed + failed;
 
-  char *symbol    = flaky ? WARN : " ";
-  char *flaky_str = flaky ? " (" YELLOW "flaky" RESET ")" : "";
+  const char *symbol    = flaky ? WARN : " ";
+  const char *flaky_str = flaky ? " (" YELLOW "flaky" RESET ")" : "";
 
   printf("\n"
          "  %s%-4s%s %s%s%s\n"
@@ -422,7 +423,6 @@ static void run(struct trial *ctx) {
   }
 
   r->v = OK;
-  return;
 }
 
 static void replay(struct trial *ctx) {
