@@ -436,7 +436,35 @@ static void shmfree(struct trial *ctx) {
 }
 
 /*
- * Verify each property in a specification.
+ * Check a property and return a verdict.
+ */
+static enum verdict check(struct config c, struct property *prop) {
+  struct property p = *prop;
+  p.cfg             = cfgresolve(c, prop);
+
+  struct trial   ctx = shminit(&p);
+  struct result *r   = ctx.r;
+
+  execute(run, &ctx);
+
+  // If the property returns nonzero or predicate exited early, we count as a
+  // failure.
+  if (!r->s.finished) {
+    r->ac[FAIL]++;
+    r->v = FAIL;
+  }
+
+  result_print(&p, r);
+
+  enum verdict v = r->v;
+
+  shmfree(&ctx);
+
+  return v;
+}
+
+/*
+ * Verify a specification.
  */
 int verify(const struct specification *spec) {
   int ac[3] = {0};
@@ -454,30 +482,8 @@ int verify(const struct specification *spec) {
   printf("Verifying '%s' specification with seed 0x%016" PRIx64 "\n",
          spec->name, c.seed);
 
-  for (struct property *prop = spec->props; prop->predicate != NULL; prop++) {
-
-    struct property p = *prop;
-
-    p.cfg = cfgresolve(c, prop);
-
-    struct trial   ctx = shminit(&p);
-    struct result *r   = ctx.r;
-
-    execute(run, &ctx);
-
-    // If the property returns nonzero or predicate exited early, we count as a
-    // failure.
-    if (!r->s.finished) {
-      r->ac[FAIL]++;
-      r->v = FAIL;
-    }
-
-    ac[r->v]++;
-
-    result_print(&p, r);
-
-    shmfree(&ctx);
-  }
+  for (struct property *prop = spec->props; prop->predicate != NULL; prop++)
+    ac[check(c, prop)]++;
 
   result_print_summary(ac);
 
