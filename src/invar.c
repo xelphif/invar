@@ -449,6 +449,44 @@ static struct result evaluate(struct trial *ctx, const struct tape *candidate) {
   return execute(replay, ctx);
 }
 
+// Accept a candidate if the outcome matches. If accepted, copy the list in
+// shared memory to our interesting buffer, since replay mode clamps all values.
+static bool accept(struct trial *ctx, struct tape *interesting,
+                   struct result outcome) {
+  struct tape *t = ctx->t;
+
+  bool accepted;
+  if ((accepted = resultcmp(outcome, evaluate(ctx, interesting)))) {
+    tcopy(interesting, t);
+    interesting->len = t->off;
+  }
+
+  return accepted;
+}
+
+static void reduce(struct trial *ctx, struct tape *interesting,
+                   struct result outcome) {
+  for (size_t i = 0; i < interesting->len; i++) {
+    uint64_t hi = interesting->w[i];
+
+    interesting->w[i] = 0;
+    if (accept(ctx, interesting, outcome)) continue;
+
+    // binary search lowest passing word
+    uint64_t lo = 1;
+    while (lo < hi) {
+      uint64_t mid      = lo + (hi - lo) / 2;
+      interesting->w[i] = mid;
+      if (accept(ctx, interesting, outcome))
+        hi = mid;
+      else
+        lo = mid + 1;
+    }
+
+    interesting->w[i] = hi;
+  }
+}
+
 static void shrink(struct trial *ctx, struct result outcome) {
   struct tape *t = ctx->t;
 
@@ -463,6 +501,10 @@ static void shrink(struct trial *ctx, struct result outcome) {
   struct result a = evaluate(ctx, interesting);
 
   if (!resultcmp(outcome, a)) die("replay copy does not hold");
+
+  reduce(ctx, interesting, outcome);
+
+  tcopy(t, interesting);
 
   free(interesting);
 }
