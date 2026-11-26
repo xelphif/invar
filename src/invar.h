@@ -24,6 +24,9 @@ struct config {
  */
 struct tape;
 
+[[gnu::format(printf, 2, 3)]]
+void note(struct tape *t, const char *fmt, ...);
+
 /*
  * scope: deferrals for generator cleanup.
  */

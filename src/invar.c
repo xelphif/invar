@@ -207,6 +207,8 @@ struct tape {
   size_t   cap;     /* capacity in words */
   bool     overrun; /* tape exceeded flag */
   bool     replay;  /* replay flag */
+  bool     print;   /* print flag */
+  int      notes;   /* notes counter */
   uint64_t seed;    /* seed for the current generation run */
   uint64_t w[];
 };
@@ -224,6 +226,7 @@ static inline void tseed(struct tape *t, uint64_t seed) {
   t->len     = 0;
   t->overrun = false;
   t->replay  = false;
+  t->print   = false;
   t->seed    = seed;
 }
 
@@ -239,13 +242,35 @@ static void tcopy(struct tape *dest, const struct tape *src) {
 }
 
 /*
+ * Display 'note' calls, which are to display counterexamples after shrinking.
+ */
+[[gnu::format(printf, 2, 3)]]
+void note(struct tape *t, const char *fmt, ...) {
+  if (!t->print) return;
+
+  if (!t->notes++) printf("\n       counterexample:\n");
+
+  va_list args;
+  va_start(args, fmt);
+
+  printf("         ");
+  vprintf(fmt, args);
+  printf("\n");
+
+  va_end(args);
+
+  fflush(stdout);
+}
+
+/*
  * Draw a 64 bit word in [0, n] from the choice sequence tape.
- * During generation, we derive the entropy using the word's index in the tape
- * and the seed. During replay, we read the already derived indexes until we
- * reach the length of the tape. We also clamp values based on their respective
- * type, in the event of a word with a larger value than what the type can
- * represent is moved into place. Once we are past the end of the replay, or at
- * the end of the tape during generation, set the overrun flag and return 0.
+ * During generation, we derive the entropy using the word's index in the
+ * tape and the seed. During replay, we read the already derived indexes
+ * until we reach the length of the tape. We also clamp values based on
+ * their respective type, in the event of a word with a larger value than
+ * what the type can represent is moved into place. Once we are past the end
+ * of the replay, or at the end of the tape during generation, set the
+ * overrun flag and return 0.
  */
 static inline uint64_t draw_word(struct tape *t, uint64_t n) {
   if (t->off < t->len) {
@@ -568,6 +593,7 @@ static enum verdict check(struct config c, struct property *prop) {
   p.cfg             = cfgresolve(c, prop);
 
   struct trial  ctx = shminit(&p);
+  struct tape  *t   = ctx.t;
   struct stats *s   = ctx.s;
 
   struct result outcome = execute(run, &ctx);
@@ -591,6 +617,12 @@ static enum verdict check(struct config c, struct property *prop) {
   }
 
   result_print(&p, &outcome, s, flaky);
+
+  if (outcome.v == FAIL && !flaky && p.cfg.replays > 0) {
+    t->print = true;
+    t->notes = 0;
+    execute(replay, &ctx);
+  }
 
   shmfree(&ctx);
 
