@@ -8,6 +8,7 @@
 #define INVAR_CONFIG_FIELDS(X) \
   X(uint64_t, seed)            \
   X(int, iterations)           \
+  X(int, replays)              \
   X(size_t, capacity)          \
   X(bool, inprocess)           \
   X(unsigned int, timeout)

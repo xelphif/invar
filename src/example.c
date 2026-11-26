@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/random.h>
 
 #include "invar.h"
 
@@ -60,16 +61,23 @@ PROPERTY(must_exit) {
   return true;
 }
 
+PROPERTY(must_be_flaky) {
+  unsigned char b;
+  getrandom(&b, 1, 0);
+  return b & 1;
+}
+
 struct property props[] = {
     PROP(must_pass),
     PROP(must_fail_first),
     PROP(must_fail_later),
     PROP(must_abort),
-    PROP(must_segv_later),
+    PROP(must_segv_later, .replays = 1),
     PROP(must_give_up, .capacity = 4),
     PROP(must_discard_some, .capacity = 4),
     PROP(must_defer),
     PROP(must_exit),
+    PROP(must_be_flaky),
     {0},
 
 };

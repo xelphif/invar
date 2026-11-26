@@ -23,8 +23,9 @@
 
 #include "invar.h"
 
-#define TAPE_DEFAULT_CAP  8192
-#define PROP_DEFAULT_ITER 100
+#define TAPE_DEFAULT_CAP     8192
+#define PROP_DEFAULT_ITER    100
+#define PROP_DEFAULT_REPLAYS 10
 
 #define RESET  "\033[0m"
 #define BOLD   "\033[1m"
@@ -58,15 +59,19 @@ struct result {
    */
   enum verdict { FAIL, OK, SKIP } v;
 
-  int ac[3];
+  bool signaled;
+  bool finished;
+  int  code;
+};
 
-  struct status {
-    bool signaled;
-    bool finished;
-    int  code;
-  } s;
-
+struct stats {
   int iter;
+  int ac[3];
+};
+
+struct shared {
+  struct result r;
+  struct stats  s;
 };
 
 struct result_str {
@@ -80,43 +85,47 @@ static struct result_str result_str[] = {
     [SKIP] = {"SKIP", YELLOW},
 };
 
-static inline void result_print_header(struct property *prop,
-                                       struct result   *r) {
-  int passed  = r->ac[OK];
-  int failed  = r->ac[FAIL];
-  int skipped = r->ac[SKIP];
+#define ERROR RED "!" RESET
+#define WARN  YELLOW "!" RESET
+
+static inline void result_print_header(struct property *prop, struct result *r,
+                                       struct stats *s, bool flaky) {
+  int passed  = s->ac[OK];
+  int failed  = s->ac[FAIL];
+  int skipped = s->ac[SKIP];
   int total   = passed + failed;
+
+  char *symbol    = flaky ? WARN : " ";
+  char *flaky_str = flaky ? " (" YELLOW "flaky" RESET ")" : "";
 
   printf("\n"
          "  %s%-4s%s %s%s%s\n"
-         "       %d out of %d passed, %d skipped\n"
+         "     %s %d out of %d passed, %d skipped%s\n"
          "       seed:    0x%016" PRIx64,
          result_str[r->v].color, result_str[r->v].str, RESET, BOLD, prop->name,
-         RESET, passed, total, skipped, prop->cfg.seed);
+         RESET, symbol, passed, total, skipped, flaky_str, prop->cfg.seed);
 
-  if (r->ac[FAIL]) printf(", iteration %d", r->iter);
+  if (s->ac[FAIL]) printf(", iteration %d", s->iter);
 
   printf("\n");
 }
 
-#define SIGNAL RED "!" RESET
 static inline void result_print_signal(int signal) {
-  printf("     " SIGNAL " signal:  %s\n", strsignal(signal));
+  printf("     " ERROR " signal:  %s\n", strsignal(signal));
 }
 
-#define EXITED YELLOW "!" RESET
 static inline void result_print_exit(int code) {
-  printf("     " EXITED " exited:  predicate exited early with code %d\n",
-         code);
+  printf("     " WARN " exited:  predicate exited early with code %d\n", code);
 }
 
-static inline void result_print(struct property *prop, struct result *r) {
-  result_print_header(prop, r);
+static inline void result_print(struct property *prop, struct result *r,
+                                struct stats *s, bool flaky) {
+  result_print_header(prop, r, s, flaky);
 
-  if (r->s.signaled)
-    result_print_signal(r->s.code);
-  else if (!r->s.finished)
-    result_print_exit(r->s.code);
+  if (r->signaled)
+    result_print_signal(r->code);
+  else if (!r->finished)
+    result_print_exit(r->code);
 }
 
 static inline void result_print_summary(int ac[3]) {
@@ -294,6 +303,7 @@ struct trial {
 
   struct tape     *t;
   struct result   *r;
+  struct stats    *s;
   struct property *p;
 };
 
@@ -311,7 +321,7 @@ static void isolate(trial_fn fn, struct trial *ctx) {
 
   if (cpid == 0) {
     fn(ctx);
-    r->s.finished = true;
+    r->finished = true;
     exit(EXIT_SUCCESS);
   }
 
@@ -320,21 +330,41 @@ static void isolate(trial_fn fn, struct trial *ctx) {
   int status;
   waitpid(cpid, &status, 0);
 
-  r->s.signaled = WIFSIGNALED(status);
-  r->s.code     = r->s.signaled ? WTERMSIG(status) : WEXITSTATUS(status);
+  r->signaled = WIFSIGNALED(status);
+  r->code     = r->signaled ? WTERMSIG(status) : WEXITSTATUS(status);
 }
 
-static void execute(trial_fn fn, struct trial *ctx) {
+static struct result execute(trial_fn fn, struct trial *ctx) {
 
   struct result   *r = ctx->r;
   struct property *p = ctx->p;
 
+  r->finished = false;
+  r->v        = FAIL;
+
   if (p->cfg.inprocess) {
     fn(ctx);
-    r->s.finished = true;
+    r->finished = true;
   } else {
     isolate(fn, ctx);
   }
+
+  return *r;
+}
+
+static bool probe(struct tape *t, struct property *p) {
+  struct scope scope = {0};
+
+  // Set timeout if configured for property.
+  if (p->cfg.timeout) alarm(p->cfg.timeout);
+
+  bool ok = p->predicate(t, &scope);
+
+  alarm(0);
+
+  unwind(scope);
+
+  return ok;
 }
 
 /* Run predicate based on seed and iterations, returning on first failure for
@@ -343,26 +373,20 @@ static void run(struct trial *ctx) {
 
   struct tape     *t = ctx->t;
   struct result   *r = ctx->r;
+  struct stats    *s = ctx->s;
   struct property *p = ctx->p;
 
   for (int i = 0, passed = 0; passed < p->cfg.iterations; i++) {
 
     // Record iteration before execution for crash reporting.
-    r->iter = i;
+    s->iter = i;
     tseed(t, mix(p->cfg.seed, i));
 
-    // Set timeout if configured for property.
-    if (p->cfg.timeout) alarm(p->cfg.timeout);
-
-    struct scope s = {0};
-
-    bool ok = p->predicate(t, &s);
-
-    unwind(s);
+    bool ok = probe(t, p);
 
     // If we discard too many trials, we give up on the property.
     if (t->overrun) {
-      if (++r->ac[SKIP] == p->cfg.iterations) {
+      if (++s->ac[SKIP] == p->cfg.iterations) {
         r->v = SKIP;
         return;
       }
@@ -370,7 +394,7 @@ static void run(struct trial *ctx) {
       continue;
     }
 
-    r->ac[ok]++;
+    s->ac[ok]++;
 
     if (!ok) {
       r->v = FAIL;
@@ -382,6 +406,21 @@ static void run(struct trial *ctx) {
 
   r->v = OK;
   return;
+}
+
+static void replay(struct trial *ctx) {
+  struct tape     *t = ctx->t;
+  struct result   *r = ctx->r;
+  struct property *p = ctx->p;
+
+  trewind(t);
+
+  bool ok = probe(t, p);
+
+  if (t->overrun)
+    r->v = SKIP;
+  else
+    r->v = ok;
 }
 
 /* Resolve our effective config for our properties */
@@ -401,7 +440,7 @@ static struct config cfgresolve(struct config c, struct property *p) {
 /* Byte offset of the tape in the shared region: the result's size rounded up
  * to the tape's alignment. */
 constexpr size_t TAPE_OFFSET =
-    (sizeof(struct result) + alignof(struct tape) - 1) / alignof(struct tape) *
+    (sizeof(struct shared) + alignof(struct tape) - 1) / alignof(struct tape) *
     alignof(struct tape);
 
 /* Initialize shared memory region and align pointers properly */
@@ -416,8 +455,8 @@ static struct trial shminit(struct property *p) {
 
   if (shm == MAP_FAILED) die("failed to map shared memory region");
 
-  struct result *r = (struct result *)shm;
-  struct tape   *t = (struct tape *)(shm + TAPE_OFFSET);
+  struct shared *shared = (struct shared *)shm;
+  struct tape   *t      = (struct tape *)(shm + TAPE_OFFSET);
 
   t->cap = p->cfg.capacity;
 
@@ -426,13 +465,20 @@ static struct trial shminit(struct property *p) {
       .size = size,
 
       .t = t,
-      .r = r,
+      .r = &shared->r,
+      .s = &shared->s,
       .p = p,
   };
 }
 
 static void shmfree(struct trial *ctx) {
   if (munmap(ctx->shm, ctx->size)) die("failed to unmap shared memory region");
+}
+
+// TODO: improve determinism check to consider tape usage
+static bool resultcmp(struct result a, struct result b) {
+  return (a.finished == b.finished) && (a.signaled == b.signaled) &&
+         (a.code == b.code) && (a.v == b.v);
 }
 
 /*
@@ -442,25 +488,31 @@ static enum verdict check(struct config c, struct property *prop) {
   struct property p = *prop;
   p.cfg             = cfgresolve(c, prop);
 
-  struct trial   ctx = shminit(&p);
-  struct result *r   = ctx.r;
+  struct trial  ctx = shminit(&p);
+  struct stats *s   = ctx.s;
 
-  execute(run, &ctx);
+  struct result a = execute(run, &ctx);
 
-  // If the property returns nonzero or predicate exited early, we count as a
-  // failure.
-  if (!r->s.finished) {
-    r->ac[FAIL]++;
-    r->v = FAIL;
+  // If the property returns nonzero or predicate exited early, we adjust the
+  // count for failures.
+  if (!a.finished) s->ac[FAIL]++;
+
+  bool flaky = false;
+
+  if (a.v == FAIL) {
+    for (int i = 0; i < p.cfg.replays; i++) {
+      struct result b = execute(replay, &ctx);
+      flaky           = !resultcmp(a, b);
+
+      if (flaky) break;
+    }
   }
 
-  result_print(&p, r);
-
-  enum verdict v = r->v;
+  result_print(&p, &a, s, flaky);
 
   shmfree(&ctx);
 
-  return v;
+  return a.v;
 }
 
 /*
@@ -474,6 +526,7 @@ int verify(const struct specification *spec) {
   const struct config defaults = {
       .seed       = getseed(),
       .iterations = PROP_DEFAULT_ITER,
+      .replays    = PROP_DEFAULT_REPLAYS,
       .capacity   = TAPE_DEFAULT_CAP,
   };
 
