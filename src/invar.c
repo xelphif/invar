@@ -64,6 +64,12 @@ struct result {
   int  code;
 };
 
+// TODO: improve determinism check to consider tape usage
+static bool resultcmp(struct result a, struct result b) {
+  return (a.finished == b.finished) && (a.signaled == b.signaled) &&
+         (a.code == b.code) && (a.v == b.v);
+}
+
 struct stats {
   int iter;
   int ac[3];
@@ -220,6 +226,17 @@ static inline void tseed(struct tape *t, uint64_t seed) {
   t->seed    = seed;
 }
 
+static size_t tsize(size_t cap) {
+  return offsetof(struct tape, w) + cap * sizeof(uint64_t);
+}
+
+static void tcopy(struct tape *dest, const struct tape *src) {
+  if (dest->cap < src->len) die("attempting to copy a tape larger than dest");
+
+  dest->len = src->len;
+  memcpy(dest->w, src->w, sizeof(uint64_t) * src->len);
+}
+
 /*
  * Draw a 64 bit word in [0, n] from the choice sequence tape.
  * During generation, we derive the entropy using the word's index in the tape
@@ -352,7 +369,7 @@ static struct result execute(trial_fn fn, struct trial *ctx) {
   return *r;
 }
 
-static bool probe(struct tape *t, struct property *p) {
+static bool attempt(struct tape *t, struct property *p) {
   struct scope scope = {0};
 
   // Set timeout if configured for property.
@@ -382,7 +399,7 @@ static void run(struct trial *ctx) {
     s->iter = i;
     tseed(t, mix(p->cfg.seed, i));
 
-    bool ok = probe(t, p);
+    bool ok = attempt(t, p);
 
     // If we discard too many trials, we give up on the property.
     if (t->overrun) {
@@ -415,12 +432,39 @@ static void replay(struct trial *ctx) {
 
   trewind(t);
 
-  bool ok = probe(t, p);
+  bool ok = attempt(t, p);
 
   if (t->overrun)
     r->v = SKIP;
   else
     r->v = ok;
+}
+
+// Load tape into shared memory and evaluate
+static struct result evaluate(struct trial *ctx, const struct tape *candidate) {
+  struct tape *t = ctx->t;
+
+  tcopy(t, candidate);
+
+  return execute(replay, ctx);
+}
+
+static void shrink(struct trial *ctx, struct result outcome) {
+  struct tape *t = ctx->t;
+
+  size_t size = tsize(t->len);
+
+  struct tape *interesting = malloc(size);
+
+  if (!interesting) die("failed to allocate interesting buffer");
+  interesting->cap = t->len;
+  tcopy(interesting, t);
+
+  struct result a = evaluate(ctx, interesting);
+
+  if (!resultcmp(outcome, a)) die("replay copy does not hold");
+
+  free(interesting);
 }
 
 /* Resolve our effective config for our properties */
@@ -447,8 +491,7 @@ constexpr size_t TAPE_OFFSET =
 static struct trial shminit(struct property *p) {
 
   // Map shared memory.
-  size_t size = TAPE_OFFSET + offsetof(struct tape, w) +
-                p->cfg.capacity * sizeof(uint64_t);
+  size_t size = TAPE_OFFSET + tsize(p->cfg.capacity);
 
   char *shm = mmap(NULL, size, PROT_READ | PROT_WRITE,
                    MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -475,12 +518,6 @@ static void shmfree(struct trial *ctx) {
   if (munmap(ctx->shm, ctx->size)) die("failed to unmap shared memory region");
 }
 
-// TODO: improve determinism check to consider tape usage
-static bool resultcmp(struct result a, struct result b) {
-  return (a.finished == b.finished) && (a.signaled == b.signaled) &&
-         (a.code == b.code) && (a.v == b.v);
-}
-
 /*
  * Check a property and return a verdict.
  */
@@ -491,28 +528,31 @@ static enum verdict check(struct config c, struct property *prop) {
   struct trial  ctx = shminit(&p);
   struct stats *s   = ctx.s;
 
-  struct result a = execute(run, &ctx);
+  struct result outcome = execute(run, &ctx);
 
   // If the property returns nonzero or predicate exited early, we adjust the
   // count for failures.
-  if (!a.finished) s->ac[FAIL]++;
+  if (!outcome.finished) s->ac[FAIL]++;
 
   bool flaky = false;
 
-  if (a.v == FAIL) {
+  if (outcome.v == FAIL) {
+
     for (int i = 0; i < p.cfg.replays; i++) {
-      struct result b = execute(replay, &ctx);
-      flaky           = !resultcmp(a, b);
+      struct result a = execute(replay, &ctx);
+      flaky           = !resultcmp(outcome, a);
 
       if (flaky) break;
     }
+
+    if (!flaky && p.cfg.replays > 0) shrink(&ctx, outcome);
   }
 
-  result_print(&p, &a, s, flaky);
+  result_print(&p, &outcome, s, flaky);
 
   shmfree(&ctx);
 
-  return a.v;
+  return outcome.v;
 }
 
 /*
