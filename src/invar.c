@@ -285,21 +285,26 @@ static inline void unwind(struct scope s) {
   }
 }
 
+struct trial {
+  struct tape     *t;
+  struct result   *r;
+  struct property *p;
+};
+
+typedef void (*trial_fn)(struct trial *ctx);
+
 /*
  * Isolate function in order to prevent predicates from crashing the runners.
  */
-typedef void (*runner_fn)(struct tape *t, struct result *r,
-                          struct property *prop);
+static void isolate(trial_fn fn, struct trial *ctx) {
 
-static void isolate(runner_fn fn, struct tape *t, struct result *r,
-                    struct property *prop) {
+  struct result *r = ctx->r;
 
   fflush(stdout);
-
   pid_t cpid = fork();
 
   if (cpid == 0) {
-    fn(t, r, prop);
+    fn(ctx);
     r->s.finished = true;
     exit(EXIT_SUCCESS);
   }
@@ -313,28 +318,45 @@ static void isolate(runner_fn fn, struct tape *t, struct result *r,
   r->s.code     = r->s.signaled ? WTERMSIG(status) : WEXITSTATUS(status);
 }
 
+static void execute(trial_fn fn, struct trial *ctx) {
+
+  struct result   *r = ctx->r;
+  struct property *p = ctx->p;
+
+  if (p->cfg.inprocess) {
+    fn(ctx);
+    r->s.finished = true;
+  } else {
+    isolate(fn, ctx);
+  }
+}
+
 /* Run predicate based on seed and iterations, returning on first failure for
  * potential shrinking. */
-static void run(struct tape *t, struct result *r, struct property *prop) {
+static void run(struct trial *ctx) {
 
-  for (int i = 0, passed = 0; passed < prop->cfg.iterations; i++) {
+  struct tape     *t = ctx->t;
+  struct result   *r = ctx->r;
+  struct property *p = ctx->p;
+
+  for (int i = 0, passed = 0; passed < p->cfg.iterations; i++) {
 
     // Record iteration before execution for crash reporting.
     r->iter = i;
-    tseed(t, mix(prop->cfg.seed, i));
+    tseed(t, mix(p->cfg.seed, i));
 
     // Set timeout if configured for property.
-    if (prop->cfg.timeout) alarm(prop->cfg.timeout);
+    if (p->cfg.timeout) alarm(p->cfg.timeout);
 
     struct scope s = {0};
 
-    bool ok = prop->predicate(t, &s);
+    bool ok = p->predicate(t, &s);
 
     unwind(s);
 
     // If we discard too many trials, we give up on the property.
     if (t->overrun) {
-      if (++r->ac[SKIP] == prop->cfg.iterations) {
+      if (++r->ac[SKIP] == p->cfg.iterations) {
         r->v = SKIP;
         return;
       }
@@ -407,15 +429,16 @@ int verify(const struct specification *spec) {
 
     t->cap = p.cfg.capacity;
 
+    struct trial ctx = (struct trial){
+        .t = t,
+        .r = r,
+        .p = &p,
+    };
+
+    execute(run, &ctx);
+
     // If the property returns nonzero or predicate exited early, we count as a
     // failure.
-    if (p.cfg.inprocess) {
-      run(t, r, &p);
-      r->s.finished = true;
-    } else {
-      isolate(run, t, r, &p);
-    }
-
     if (!r->s.finished) {
       r->ac[FAIL]++;
       r->v = FAIL;
