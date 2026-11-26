@@ -34,6 +34,27 @@
 #define GREEN  "\033[1;32m"
 #define YELLOW "\033[1;33m"
 
+struct deferral {
+  void (*fn)(void *);
+  void            *ptr;
+  struct deferral *next;
+};
+
+struct scope {
+  struct deferral *head;
+};
+
+struct printer {
+  bool print;
+  int  count;
+};
+
+struct context {
+  struct tape   *t;
+  struct scope   s;
+  struct printer pr;
+};
+
 /*
  * Error reporting.
  */
@@ -150,6 +171,29 @@ static inline void result_print_summary(int ac[3]) {
 }
 
 /*
+ * Display 'note' calls, which are to display counterexamples after shrinking.
+ */
+[[gnu::format(printf, 2, 3)]]
+void note(struct context *ctx, const char *fmt, ...) {
+  struct printer *pr = &ctx->pr;
+
+  if (!pr->print) return;
+
+  if (!pr->count++) printf("\n       counterexample:\n");
+
+  va_list args;
+  va_start(args, fmt);
+
+  printf("         ");
+  vprintf(fmt, args);
+  printf("\n");
+
+  va_end(args);
+
+  fflush(stdout);
+}
+
+/*
  * PRNG
  */
 
@@ -207,8 +251,6 @@ struct tape {
   size_t   cap;     /* capacity in words */
   bool     overrun; /* tape exceeded flag */
   bool     replay;  /* replay flag */
-  bool     print;   /* print flag */
-  int      notes;   /* notes counter */
   uint64_t seed;    /* seed for the current generation run */
   uint64_t w[];
 };
@@ -226,7 +268,6 @@ static inline void tseed(struct tape *t, uint64_t seed) {
   t->len     = 0;
   t->overrun = false;
   t->replay  = false;
-  t->print   = false;
   t->seed    = seed;
 }
 
@@ -240,26 +281,32 @@ static void tcopy(struct tape *dest, const struct tape *src) {
   dest->len = src->len;
   memcpy(dest->w, src->w, sizeof(uint64_t) * src->len);
 }
-
 /*
- * Display 'note' calls, which are to display counterexamples after shrinking.
+ * Memory lifetime management.
  */
-[[gnu::format(printf, 2, 3)]]
-void note(struct tape *t, const char *fmt, ...) {
-  if (!t->print) return;
 
-  if (!t->notes++) printf("\n       counterexample:\n");
+void defer(struct context *ctx, void (*fn)(void *), void *ptr) {
+  struct scope *s = &ctx->s;
 
-  va_list args;
-  va_start(args, fmt);
+  struct deferral *d = malloc(sizeof(struct deferral));
 
-  printf("         ");
-  vprintf(fmt, args);
-  printf("\n");
+  if (!d) die("failed to allocate deferral node");
 
-  va_end(args);
+  d->fn  = fn ? fn : free;
+  d->ptr = ptr;
 
-  fflush(stdout);
+  d->next = s->head;
+  s->head = d;
+}
+
+static inline void unwind(struct scope s) {
+  while (s.head) {
+    struct deferral *d = s.head;
+    s.head             = d->next;
+
+    d->fn(d->ptr);
+    free(d);
+  }
 }
 
 /*
@@ -292,49 +339,15 @@ static inline uint64_t draw_word(struct tape *t, uint64_t n) {
   return t->w[t->len++, t->off++] = w;
 }
 
-uint64_t draw_u64(struct tape *t) { return draw_word(t, UINT64_MAX); }
-uint32_t draw_u32(struct tape *t) { return draw_word(t, UINT32_MAX); }
-uint16_t draw_u16(struct tape *t) { return draw_word(t, UINT16_MAX); }
-uint8_t  draw_u8(struct tape *t) { return draw_word(t, UINT8_MAX); }
-bool     draw_bool(struct tape *t) { return draw_word(t, 1); }
+uint64_t draw_u64(struct context *ctx) { return draw_word(ctx->t, UINT64_MAX); }
+uint32_t draw_u32(struct context *ctx) { return draw_word(ctx->t, UINT32_MAX); }
+uint16_t draw_u16(struct context *ctx) { return draw_word(ctx->t, UINT16_MAX); }
+uint8_t  draw_u8(struct context *ctx) { return draw_word(ctx->t, UINT8_MAX); }
+bool     draw_bool(struct context *ctx) { return draw_word(ctx->t, 1); }
 
-int64_t draw_range(struct tape *t, int64_t min, int64_t max) {
-  return (int64_t)((uint64_t)min + draw_word(t, (uint64_t)max - (uint64_t)min));
-}
-
-/*
- * Memory lifetime management.
- */
-struct deferral {
-  void (*fn)(void *);
-  void            *ptr;
-  struct deferral *next;
-};
-
-struct scope {
-  struct deferral *head;
-};
-
-void defer(struct scope *s, void (*fn)(void *), void *ptr) {
-  struct deferral *d = malloc(sizeof(struct deferral));
-
-  if (!d) die("failed to allocate deferral node");
-
-  d->fn  = fn ? fn : free;
-  d->ptr = ptr;
-
-  d->next = s->head;
-  s->head = d;
-}
-
-static inline void unwind(struct scope s) {
-  while (s.head) {
-    struct deferral *d = s.head;
-    s.head             = d->next;
-
-    d->fn(d->ptr);
-    free(d);
-  }
+int64_t draw_range(struct context *ctx, int64_t min, int64_t max) {
+  return (int64_t)((uint64_t)min +
+                   draw_word(ctx->t, (uint64_t)max - (uint64_t)min));
 }
 
 /*
@@ -348,22 +361,24 @@ struct trial {
   struct result   *r;
   struct stats    *s;
   struct property *p;
+
+  struct printer pr;
 };
 
-typedef void (*trial_fn)(struct trial *ctx);
+typedef void (*trial_fn)(struct trial *);
 
 /*
  * Isolate function in order to prevent predicates from crashing the runners.
  */
-static void isolate(trial_fn fn, struct trial *ctx) {
+static void isolate(trial_fn fn, struct trial *tr) {
 
-  struct result *r = ctx->r;
+  struct result *r = tr->r;
 
   fflush(stdout);
   pid_t cpid = fork();
 
   if (cpid == 0) {
-    fn(ctx);
+    fn(tr);
     r->finished = true;
     exit(EXIT_SUCCESS);
   }
@@ -377,47 +392,49 @@ static void isolate(trial_fn fn, struct trial *ctx) {
   r->code     = r->signaled ? WTERMSIG(status) : WEXITSTATUS(status);
 }
 
-static struct result execute(trial_fn fn, struct trial *ctx) {
+static struct result execute(trial_fn fn, struct trial *tr) {
 
-  struct result   *r = ctx->r;
-  struct property *p = ctx->p;
+  struct result   *r = tr->r;
+  struct property *p = tr->p;
 
   r->finished = false;
   r->v        = FAIL;
 
   if (p->cfg.inprocess) {
-    fn(ctx);
+    fn(tr);
     r->finished = true;
   } else {
-    isolate(fn, ctx);
+    isolate(fn, tr);
   }
 
   return *r;
 }
 
-static bool attempt(struct tape *t, struct property *p) {
-  struct scope scope = {0};
+static bool attempt(struct trial *tr) {
+  struct property *p = tr->p;
+
+  struct context ctx = (struct context){.t = tr->t, .pr = tr->pr};
 
   // Set timeout if configured for property.
   if (p->cfg.timeout) alarm(p->cfg.timeout);
 
-  bool ok = p->predicate(t, &scope);
+  bool ok = p->predicate(&ctx);
 
   alarm(0);
 
-  unwind(scope);
+  unwind(ctx.s);
 
   return ok;
 }
 
 /* Run predicate based on seed and iterations, returning on first failure for
  * potential shrinking. */
-static void run(struct trial *ctx) {
+static void run(struct trial *tr) {
 
-  struct tape     *t = ctx->t;
-  struct result   *r = ctx->r;
-  struct stats    *s = ctx->s;
-  struct property *p = ctx->p;
+  struct tape     *t = tr->t;
+  struct result   *r = tr->r;
+  struct stats    *s = tr->s;
+  struct property *p = tr->p;
 
   for (int i = 0, passed = 0; passed < p->cfg.iterations; i++) {
 
@@ -425,7 +442,7 @@ static void run(struct trial *ctx) {
     s->iter = i;
     tseed(t, mix(p->cfg.seed, i));
 
-    bool ok = attempt(t, p);
+    bool ok = attempt(tr);
 
     // If we discard too many trials, we give up on the property.
     if (t->overrun) {
@@ -450,14 +467,13 @@ static void run(struct trial *ctx) {
   r->v = OK;
 }
 
-static void replay(struct trial *ctx) {
-  struct tape     *t = ctx->t;
-  struct result   *r = ctx->r;
-  struct property *p = ctx->p;
+static void replay(struct trial *tr) {
+  struct tape   *t = tr->t;
+  struct result *r = tr->r;
 
   trewind(t);
 
-  bool ok = attempt(t, p);
+  bool ok = attempt(tr);
 
   if (t->overrun)
     r->v = SKIP;
@@ -466,22 +482,22 @@ static void replay(struct trial *ctx) {
 }
 
 // Load tape into shared memory and evaluate
-static struct result evaluate(struct trial *ctx, const struct tape *candidate) {
-  struct tape *t = ctx->t;
+static struct result evaluate(struct trial *tr, const struct tape *candidate) {
+  struct tape *t = tr->t;
 
   tcopy(t, candidate);
 
-  return execute(replay, ctx);
+  return execute(replay, tr);
 }
 
 // Accept a candidate if the outcome matches. If accepted, copy the list in
 // shared memory to our interesting buffer, since replay mode clamps all values.
-static bool accept(struct trial *ctx, struct tape *interesting,
+static bool accept(struct trial *tr, struct tape *interesting,
                    struct result outcome) {
-  struct tape *t = ctx->t;
+  struct tape *t = tr->t;
 
   bool accepted;
-  if ((accepted = resultcmp(outcome, evaluate(ctx, interesting)))) {
+  if ((accepted = resultcmp(outcome, evaluate(tr, interesting)))) {
     tcopy(interesting, t);
     interesting->len = t->off;
   }
@@ -489,20 +505,20 @@ static bool accept(struct trial *ctx, struct tape *interesting,
   return accepted;
 }
 
-static void reduce(struct trial *ctx, struct tape *interesting,
+static void reduce(struct trial *tr, struct tape *interesting,
                    struct result outcome) {
   for (size_t i = 0; i < interesting->len; i++) {
     uint64_t hi = interesting->w[i];
 
     interesting->w[i] = 0;
-    if (accept(ctx, interesting, outcome)) continue;
+    if (accept(tr, interesting, outcome)) continue;
 
     // binary search lowest passing word
     uint64_t lo = 1;
     while (lo < hi) {
       uint64_t mid      = lo + (hi - lo) / 2;
       interesting->w[i] = mid;
-      if (accept(ctx, interesting, outcome))
+      if (accept(tr, interesting, outcome))
         hi = mid;
       else
         lo = mid + 1;
@@ -512,8 +528,8 @@ static void reduce(struct trial *ctx, struct tape *interesting,
   }
 }
 
-static void shrink(struct trial *ctx, struct result outcome) {
-  struct tape *t = ctx->t;
+static void shrink(struct trial *tr, struct result outcome) {
+  struct tape *t = tr->t;
 
   size_t size = tsize(t->len);
 
@@ -523,11 +539,11 @@ static void shrink(struct trial *ctx, struct result outcome) {
   interesting->cap = t->len;
   tcopy(interesting, t);
 
-  struct result a = evaluate(ctx, interesting);
+  struct result a = evaluate(tr, interesting);
 
   if (!resultcmp(outcome, a)) die("replay copy does not hold");
 
-  reduce(ctx, interesting, outcome);
+  reduce(tr, interesting, outcome);
 
   tcopy(t, interesting);
 
@@ -581,8 +597,8 @@ static struct trial shminit(struct property *p) {
   };
 }
 
-static void shmfree(struct trial *ctx) {
-  if (munmap(ctx->shm, ctx->size)) die("failed to unmap shared memory region");
+static void shmfree(struct trial *tr) {
+  if (munmap(tr->shm, tr->size)) die("failed to unmap shared memory region");
 }
 
 /*
@@ -592,11 +608,11 @@ static enum verdict check(struct config c, struct property *prop) {
   struct property p = *prop;
   p.cfg             = cfgresolve(c, prop);
 
-  struct trial  ctx = shminit(&p);
-  struct tape  *t   = ctx.t;
-  struct stats *s   = ctx.s;
+  struct trial    tr = shminit(&p);
+  struct stats   *s  = tr.s;
+  struct printer *pr = &tr.pr;
 
-  struct result outcome = execute(run, &ctx);
+  struct result outcome = execute(run, &tr);
 
   // If the property returns nonzero or predicate exited early, we adjust the
   // count for failures.
@@ -607,24 +623,24 @@ static enum verdict check(struct config c, struct property *prop) {
   if (outcome.v == FAIL) {
 
     for (int i = 0; i < p.cfg.replays; i++) {
-      struct result a = execute(replay, &ctx);
+      struct result a = execute(replay, &tr);
       flaky           = !resultcmp(outcome, a);
 
       if (flaky) break;
     }
 
-    if (!flaky && p.cfg.replays > 0) shrink(&ctx, outcome);
+    if (!flaky && p.cfg.replays > 0) shrink(&tr, outcome);
   }
 
   result_print(&p, &outcome, s, flaky);
 
   if (outcome.v == FAIL && !flaky && p.cfg.replays > 0) {
-    t->print = true;
-    t->notes = 0;
-    execute(replay, &ctx);
+    pr->print = true;
+    pr->count = 0;
+    execute(replay, &tr);
   }
 
-  shmfree(&ctx);
+  shmfree(&tr);
 
   return outcome.v;
 }

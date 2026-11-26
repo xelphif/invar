@@ -9,9 +9,9 @@
 GENERATOR(void *, gen_v3) {
   unsigned int *v = malloc(sizeof(int) * 3);
   for (int i = 0; i < 3; i++)
-    v[i] = draw_u32(t);
+    v[i] = draw_u32(ctx);
 
-  defer(s, NULL, v);
+  defer(ctx, NULL, v);
   return v;
 }
 
@@ -19,15 +19,15 @@ GENERATOR(void *, gen_v3) {
  * Properties
  */
 PROPERTY(must_pass) {
-  draw_u64(t);
+  draw_u64(ctx);
   return true;
 }
 
 PROPERTY(must_fail_first) { return false; }
 PROPERTY(must_fail_later) {
-  uint8_t a = draw_u8(t);
+  uint8_t a = draw_u8(ctx);
 
-  note(t, "a = %d", a);
+  note(ctx, "a = %d", a);
 
   return a < 250;
 }
@@ -35,9 +35,9 @@ PROPERTY(must_fail_later) {
 PROPERTY(must_abort) { abort(); }
 
 PROPERTY(must_segv_later) {
-  uint8_t a = draw_u8(t);
+  uint8_t a = draw_u8(ctx);
 
-  note(t, "a = %d", a);
+  note(ctx, "a = %d", a);
 
   if (a > 250) (void)*(volatile int *)NULL;
 
@@ -46,22 +46,22 @@ PROPERTY(must_segv_later) {
 
 PROPERTY(must_give_up) {
   for (int i = 0; i < 5; i++)
-    draw_u8(t);
+    draw_u8(ctx);
 
   return true;
 }
 
 PROPERTY(must_discard_some) {
-  if (draw_u8(t) < 32)
+  if (draw_u8(ctx) < 32)
     for (int i = 0; i < 5; i++)
-      draw_u8(t);
+      draw_u8(ctx);
 
   return true;
 }
 
 PROPERTY(must_defer) {
-  int *v = gen_v3(t, s);
-  note(t, "v = [%d, %d, %d]", v[0], v[1], v[2]);
+  int *v = gen_v3(ctx);
+  note(ctx, "v = [%d, %d, %d]", v[0], v[1], v[2]);
   return true;
 }
 
