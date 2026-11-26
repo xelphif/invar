@@ -285,7 +285,13 @@ static inline void unwind(struct scope s) {
   }
 }
 
+/*
+ * Trial data
+ */
 struct trial {
+  void  *shm;  // shm base pointer
+  size_t size; // shm size
+
   struct tape     *t;
   struct result   *r;
   struct property *p;
@@ -384,6 +390,37 @@ constexpr size_t TAPE_OFFSET =
     (sizeof(struct result) + alignof(struct tape) - 1) / alignof(struct tape) *
     alignof(struct tape);
 
+/* Initialize shared memory region and align pointers properly */
+static struct trial shminit(struct property *p) {
+
+  // Map shared memory.
+  size_t size = TAPE_OFFSET + offsetof(struct tape, w) +
+                p->cfg.capacity * sizeof(uint64_t);
+
+  char *shm = mmap(NULL, size, PROT_READ | PROT_WRITE,
+                   MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+
+  if (shm == MAP_FAILED) die("failed to map shared memory region");
+
+  struct result *r = (struct result *)shm;
+  struct tape   *t = (struct tape *)(shm + TAPE_OFFSET);
+
+  t->cap = p->cfg.capacity;
+
+  return (struct trial){
+      .shm  = shm,
+      .size = size,
+
+      .t = t,
+      .r = r,
+      .p = p,
+  };
+}
+
+static void shmfree(struct trial *ctx) {
+  if (munmap(ctx->shm, ctx->size)) die("failed to unmap shared memory region");
+}
+
 /*
  * Verify each property in a specification.
  */
@@ -415,25 +452,8 @@ int verify(const struct specification *spec) {
     // in the specification file)
     if (!prop->cfg.seed) p.cfg.seed ^= hash(p.name);
 
-    // Map shared memory.
-    size_t size = TAPE_OFFSET + offsetof(struct tape, w) +
-                  p.cfg.capacity * sizeof(uint64_t);
-
-    char *shm = mmap(NULL, size, PROT_READ | PROT_WRITE,
-                     MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-
-    if (shm == MAP_FAILED) die("failed to map shared memory region");
-
-    struct result *r = (struct result *)shm;
-    struct tape   *t = (struct tape *)(shm + TAPE_OFFSET);
-
-    t->cap = p.cfg.capacity;
-
-    struct trial ctx = (struct trial){
-        .t = t,
-        .r = r,
-        .p = &p,
-    };
+    struct trial   ctx = shminit(&p);
+    struct result *r   = ctx.r;
 
     execute(run, &ctx);
 
@@ -448,7 +468,7 @@ int verify(const struct specification *spec) {
 
     result_print(&p, r);
 
-    if (munmap(shm, size)) die("failed to unmap shared memory region");
+    shmfree(&ctx);
   }
 
   result_print_summary(ac);
