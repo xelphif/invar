@@ -34,7 +34,7 @@ void defer(struct context *ctx, void (*fn)(void *), void *ptr);
 typedef bool (*predicate_fn)(struct context *ctx);
 
 struct property {
-  char         *name;
+  const char   *name;
   predicate_fn  predicate;
   struct config cfg;
 };
@@ -61,10 +61,10 @@ struct property {
  * specification: full definition of the properties of an object.
  */
 struct specification {
-  char *name;
+  const char   *name;
+  struct config cfg;
 
-  struct config    cfg;
-  struct property *props;
+  const struct property *props;
 };
 
 /* Uniform draws over the range of each type. */

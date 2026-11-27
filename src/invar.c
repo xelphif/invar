@@ -122,7 +122,8 @@ static struct result_str result_str[] = {
     [SKIP] = {"SKIP", YELLOW},
 };
 
-static inline void result_print_header(struct property *prop, struct result *r,
+static inline void result_print_header(const struct property *prop,
+                                       struct config cfg, struct result *r,
                                        struct stats *s, bool flaky) {
 
   printf("  %s%-4s%s %s%s%s", colorstr(result_str[r->v].c),
@@ -142,7 +143,7 @@ static inline void result_print_header(struct property *prop, struct result *r,
 
   if (r->v == SKIP) return;
 
-  printf("       seed:    0x%016" PRIx64, prop->cfg.seed);
+  printf("       seed:    0x%016" PRIx64, cfg.seed);
 
   printf(", iteration %d", s->iter);
 
@@ -159,9 +160,9 @@ static inline void result_print_exit(int code) {
          colorstr(YELLOW), colorstr(RESET), code);
 }
 
-static inline void result_print(struct property *prop, struct result *r,
-                                struct stats *s, bool flaky) {
-  result_print_header(prop, r, s, flaky);
+static inline void result_print(const struct property *prop, struct config cfg,
+                                struct result *r, struct stats *s, bool flaky) {
+  result_print_header(prop, cfg, r, s, flaky);
 
   if (r->signaled)
     result_print_signal(r->code);
@@ -370,10 +371,12 @@ int64_t draw_range(struct context *ctx, int64_t min, int64_t max) {
  * Trial data
  */
 struct trial {
-  struct tape     *t;
-  struct result   *r;
-  struct stats    *s;
-  struct property *p;
+  struct tape   *t;
+  struct result *r;
+  struct stats  *s;
+
+  const struct property *prop;
+  struct config          cfg;
 
   struct printer pr;
 };
@@ -407,13 +410,12 @@ static void isolate(trial_fn fn, struct trial *tr) {
 
 static struct result execute(trial_fn fn, struct trial *tr) {
 
-  struct result   *r = tr->r;
-  struct property *p = tr->p;
+  struct result *r = tr->r;
 
   r->finished = false;
   r->v        = FAIL;
 
-  if (p->cfg.inprocess) {
+  if (tr->cfg.inprocess) {
     fn(tr);
     r->finished = true;
   } else {
@@ -424,14 +426,14 @@ static struct result execute(trial_fn fn, struct trial *tr) {
 }
 
 static bool attempt(struct trial *tr) {
-  struct property *p = tr->p;
+  const struct property *prop = tr->prop;
 
-  struct context ctx = (struct context){.t = tr->t, .pr = tr->pr};
+  struct context ctx = {.t = tr->t, .pr = tr->pr};
 
   // Set timeout if configured for property.
-  if (p->cfg.timeout) alarm(p->cfg.timeout);
+  if (tr->cfg.timeout) alarm(tr->cfg.timeout);
 
-  bool ok = p->predicate(&ctx);
+  bool ok = prop->predicate(&ctx);
 
   alarm(0);
 
@@ -444,22 +446,21 @@ static bool attempt(struct trial *tr) {
  * potential shrinking. */
 static void run(struct trial *tr) {
 
-  struct tape     *t = tr->t;
-  struct result   *r = tr->r;
-  struct stats    *s = tr->s;
-  struct property *p = tr->p;
+  struct tape   *t = tr->t;
+  struct result *r = tr->r;
+  struct stats  *s = tr->s;
 
-  for (int i = 0, passed = 0; passed < p->cfg.iterations; i++) {
+  for (int i = 0, passed = 0; passed < tr->cfg.iterations; i++) {
 
     // Record iteration before execution for crash reporting.
     s->iter = i;
-    tseed(t, mix(p->cfg.seed, i));
+    tseed(t, mix(tr->cfg.seed, i));
 
     bool ok = attempt(tr);
 
     // If we discard too many trials, we give up on the property.
     if (t->overrun) {
-      if (++s->skipped == p->cfg.iterations) {
+      if (++s->skipped == tr->cfg.iterations) {
         r->v = SKIP;
         return;
       }
@@ -565,7 +566,7 @@ static bool shrink(struct trial *tr, struct result outcome) {
 }
 
 /* Resolve our effective config for our properties */
-static struct config cfgresolve(struct config c, struct property *p) {
+static struct config cfgresolve(struct config c, const struct property *p) {
 
   struct config cfg = overlay(c, p->cfg);
 
@@ -606,12 +607,11 @@ static void shmfree(void *shm, size_t capacity) {
 }
 
 static bool isflaky(struct trial *tr, struct result outcome) {
-  struct tape     *t = tr->t;
-  struct property *p = tr->p;
+  struct tape *t = tr->t;
 
   bool flaky = false;
 
-  for (int i = 0; i < p->cfg.replays && !flaky; i++) {
+  for (int i = 0; i < tr->cfg.replays && !flaky; i++) {
     struct result a = execute(replay, tr);
 
     // A deterministic replay should have the same outcome and the same amount
@@ -625,20 +625,20 @@ static bool isflaky(struct trial *tr, struct result outcome) {
 /*
  * Check a property and return a verdict.
  */
-static enum verdict check(struct config c, struct property *prop) {
-  struct property p = *prop;
-  p.cfg             = cfgresolve(c, prop);
-
-  struct shared *shm = shminit(p.cfg.capacity);
+static enum verdict check(struct config c, const struct property *prop) {
+  struct config  cfg = cfgresolve(c, prop);
+  struct shared *shm = shminit(cfg.capacity);
 
   struct trial tr = {
-      .p = &p,
-      .r = &shm->r,
-      .s = &shm->s,
-      .t = shmtape(shm),
+      .prop = prop,
+      .r    = &shm->r,
+      .s    = &shm->s,
+      .t    = shmtape(shm),
+
+      .cfg = cfg,
   };
 
-  tinit(tr.t, p.cfg.capacity);
+  tinit(tr.t, cfg.capacity);
 
   struct result outcome = execute(run, &tr);
 
@@ -648,14 +648,14 @@ static enum verdict check(struct config c, struct property *prop) {
 
     // If we don't have replays, we don't shrink since we cannot verify if the
     // predicate is flaky.
-    if (!flaky && p.cfg.replays > 0) flaky = !shrink(&tr, outcome);
+    if (!flaky && cfg.replays > 0) flaky = !shrink(&tr, outcome);
   }
 
-  result_print(&p, &outcome, tr.s, flaky);
+  result_print(prop, cfg, &outcome, tr.s, flaky);
 
   if (outcome.v == FAIL) exhibit(&tr);
 
-  shmfree(shm, p.cfg.capacity);
+  shmfree(shm, cfg.capacity);
 
   return outcome.v;
 }
@@ -687,7 +687,8 @@ int verify(const struct specification *spec) {
   printf("Verifying '%s' specification with seed 0x%016" PRIx64 "\n",
          spec->name, c.seed);
 
-  for (struct property *prop = spec->props; prop->predicate != NULL; prop++)
+  for (const struct property *prop = spec->props; prop->predicate != NULL;
+       prop++)
     ac[check(c, prop)]++;
 
   result_print_summary(ac);
