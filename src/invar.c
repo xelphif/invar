@@ -381,7 +381,7 @@ struct trial {
   struct printer pr;
 };
 
-typedef void (*trial_fn)(struct trial *);
+typedef enum verdict (*trial_fn)(struct trial *);
 
 /*
  * Isolate function in order to prevent predicates from crashing the runners.
@@ -394,7 +394,7 @@ static void isolate(trial_fn fn, struct trial *tr) {
   pid_t cpid = fork();
 
   if (cpid == 0) {
-    fn(tr);
+    r->v        = fn(tr);
     r->finished = true;
     exit(EXIT_SUCCESS);
   }
@@ -416,7 +416,7 @@ static struct result execute(trial_fn fn, struct trial *tr) {
   r->v        = FAIL;
 
   if (tr->cfg.inprocess) {
-    fn(tr);
+    r->v        = fn(tr);
     r->finished = true;
   } else {
     isolate(fn, tr);
@@ -444,11 +444,10 @@ static bool attempt(struct trial *tr) {
 
 /* Run predicate based on seed and iterations, returning on first failure for
  * potential shrinking. */
-static void run(struct trial *tr) {
+static enum verdict run(struct trial *tr) {
 
-  struct tape   *t = tr->t;
-  struct result *r = tr->r;
-  struct stats  *s = tr->s;
+  struct tape  *t = tr->t;
+  struct stats *s = tr->s;
 
   for (int i = 0, passed = 0; passed < tr->cfg.iterations; i++) {
 
@@ -460,37 +459,27 @@ static void run(struct trial *tr) {
 
     // If we discard too many trials, we give up on the property.
     if (t->overrun) {
-      if (++s->skipped == tr->cfg.iterations) {
-        r->v = SKIP;
-        return;
-      }
+      if (++s->skipped == tr->cfg.iterations) return SKIP;
 
       continue;
     }
 
-    if (!ok) {
-      r->v = FAIL;
-      return;
-    }
+    if (!ok) return FAIL;
 
     passed++;
   }
 
-  r->v = OK;
+  return OK;
 }
 
-static void replay(struct trial *tr) {
-  struct tape   *t = tr->t;
-  struct result *r = tr->r;
+static enum verdict replay(struct trial *tr) {
+  struct tape *t = tr->t;
 
   trewind(t);
 
   bool ok = attempt(tr);
 
-  if (t->overrun)
-    r->v = SKIP;
-  else
-    r->v = ok;
+  return t->overrun ? SKIP : ok;
 }
 
 // Replay tape and print `note` statements
