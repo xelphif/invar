@@ -104,7 +104,7 @@ static bool resultcmp(struct result a, struct result b) {
 
 struct stats {
   int iter;
-  int ac[3];
+  int skipped;
 };
 
 struct shared {
@@ -125,7 +125,6 @@ static struct result_str result_str[] = {
 
 static inline void result_print_header(struct property *prop, struct result *r,
                                        struct stats *s, bool flaky) {
-  int skipped = s->ac[SKIP];
 
   printf("  %s%-4s%s %s%s%s", colorstr(result_str[r->v].c),
          result_str[r->v].str, colorstr(RESET), colorstr(BOLD), prop->name,
@@ -136,7 +135,7 @@ static inline void result_print_header(struct property *prop, struct result *r,
     return;
   }
 
-  if (r->v == SKIP) printf(" -- gave up after %d discards", skipped);
+  if (r->v == SKIP) printf(" -- gave up after %d discards", s->skipped);
 
   if (flaky) printf(" (%sflaky%s)", colorstr(YELLOW), colorstr(RESET));
 
@@ -462,15 +461,13 @@ static void run(struct trial *tr) {
 
     // If we discard too many trials, we give up on the property.
     if (t->overrun) {
-      if (++s->ac[SKIP] == p->cfg.iterations) {
+      if (++s->skipped == p->cfg.iterations) {
         r->v = SKIP;
         return;
       }
 
       continue;
     }
-
-    s->ac[ok]++;
 
     if (!ok) {
       r->v = FAIL;
