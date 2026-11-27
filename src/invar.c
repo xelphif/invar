@@ -500,23 +500,17 @@ static void exhibit(struct trial *tr) {
   execute(replay, tr);
 }
 
-// Load tape into shared memory and evaluate
-static struct result evaluate(struct trial *tr, const struct tape *candidate) {
-  struct tape *t = tr->t;
-
-  tcopy(t, candidate);
-
-  return execute(replay, tr);
-}
-
-// Accept a candidate if the outcome matches. If accepted, copy the list in
-// shared memory to our interesting buffer, since replay mode clamps all values.
+// Loads candidate into shared memory and replays. Accept a candidate if the
+// outcome matches. If accepted, copy the list in shared memory to our
+// interesting buffer, since replay mode clamps all values.
 static bool accept(struct trial *tr, struct tape *interesting,
                    struct result outcome) {
   struct tape *t = tr->t;
 
+  tcopy(t, interesting);
+
   bool accepted;
-  if ((accepted = resultcmp(outcome, evaluate(tr, interesting)))) {
+  if ((accepted = resultcmp(outcome, execute(replay, tr)))) {
     tcopy(interesting, t);
     interesting->len = t->off;
   }
@@ -558,9 +552,8 @@ static void shrink(struct trial *tr, struct result outcome) {
   interesting->cap = t->len;
   tcopy(interesting, t);
 
-  struct result a = evaluate(tr, interesting);
-
-  if (!resultcmp(outcome, a)) die("replay copy does not hold");
+  // TODO: mark as flaky instead of aborting run
+  if (!accept(tr, interesting, outcome)) die("replay copy does not hold");
 
   reduce(tr, interesting, outcome);
 
