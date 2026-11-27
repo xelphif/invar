@@ -270,6 +270,8 @@ struct tape {
   uint64_t w[];
 };
 
+static void tinit(struct tape *t, size_t capacity) { t->cap = capacity; }
+
 // Rewind tape for replays without affecting the length.
 static inline void trewind(struct tape *t) {
   t->off     = 0;
@@ -369,9 +371,6 @@ int64_t draw_range(struct context *ctx, int64_t min, int64_t max) {
  * Trial data
  */
 struct trial {
-  void  *shm;  // shm base pointer
-  size_t size; // shm size
-
   struct tape     *t;
   struct result   *r;
   struct stats    *s;
@@ -583,35 +582,30 @@ constexpr size_t TAPE_OFFSET =
     (sizeof(struct shared) + alignof(struct tape) - 1) / alignof(struct tape) *
     alignof(struct tape);
 
+static void *shmtape(void *shm) { return ((char *)shm + TAPE_OFFSET); }
+
+static size_t shmsize(size_t capacity) { return TAPE_OFFSET + tsize(capacity); }
+
 /* Initialize shared memory region and align pointers properly */
-static struct trial shminit(struct property *p) {
+static void *shminit(size_t capacity) {
 
   // Map shared memory.
-  size_t size = TAPE_OFFSET + tsize(p->cfg.capacity);
-
-  char *shm = mmap(NULL, size, PROT_READ | PROT_WRITE,
+  char *shm = mmap(NULL, shmsize(capacity), PROT_READ | PROT_WRITE,
                    MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 
   if (shm == MAP_FAILED) die("failed to map shared memory region");
 
-  struct shared *shared = (struct shared *)shm;
-  struct tape   *t      = (struct tape *)(shm + TAPE_OFFSET);
-
-  t->cap = p->cfg.capacity;
-
-  return (struct trial){
-      .shm  = shm,
-      .size = size,
-
-      .t = t,
-      .r = &shared->r,
-      .s = &shared->s,
-      .p = p,
-  };
+  return shm;
 }
 
-static void shmfree(struct trial *tr) {
-  if (munmap(tr->shm, tr->size)) die("failed to unmap shared memory region");
+static void shmfree(void *shm, size_t capacity) {
+  if (munmap(shm, shmsize(capacity)))
+    die("failed to unmap shared memory region");
+}
+
+
+
+
 }
 
 /*
@@ -621,15 +615,16 @@ static enum verdict check(struct config c, struct property *prop) {
   struct property p = *prop;
   p.cfg             = cfgresolve(c, prop);
 
-  struct trial    tr = shminit(&p);
-  struct stats   *s  = tr.s;
-  struct printer *pr = &tr.pr;
+  struct shared *shm = shminit(p.cfg.capacity);
 
-  struct result outcome = execute(run, &tr);
+  struct trial tr = {
+      .p = &p,
+      .r = &shm->r,
+      .s = &shm->s,
+      .t = shmtape(shm),
+  };
 
-  // If the property returns nonzero or predicate exited early, we adjust the
-  // count for failures.
-  if (!outcome.finished) s->ac[FAIL]++;
+  tinit(tr.t, p.cfg.capacity);
 
   bool flaky = false;
 
@@ -645,7 +640,7 @@ static enum verdict check(struct config c, struct property *prop) {
     if (!flaky && p.cfg.replays > 0) shrink(&tr, outcome);
   }
 
-  result_print(&p, &outcome, s, flaky);
+  result_print(&p, &outcome, tr.s, flaky);
 
   if (outcome.v == FAIL && !flaky && p.cfg.replays > 0) {
     pr->print = true;
@@ -653,7 +648,7 @@ static enum verdict check(struct config c, struct property *prop) {
     execute(replay, &tr);
   }
 
-  shmfree(&tr);
+  shmfree(shm, p.cfg.capacity);
 
   return outcome.v;
 }
