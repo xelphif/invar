@@ -603,9 +603,18 @@ static void shmfree(void *shm, size_t capacity) {
     die("failed to unmap shared memory region");
 }
 
+static bool isflaky(struct trial *tr, struct result outcome) {
+  struct property *p = tr->p;
 
+  bool flaky = false;
 
+  for (int i = 0; i < p->cfg.replays && !flaky; i++) {
+    struct result a = execute(replay, tr);
 
+    flaky = !resultcmp(outcome, a);
+  }
+
+  return flaky;
 }
 
 /*
@@ -626,17 +635,14 @@ static enum verdict check(struct config c, struct property *prop) {
 
   tinit(tr.t, p.cfg.capacity);
 
+  struct result outcome = execute(run, &tr);
+
   bool flaky = false;
-
   if (outcome.v == FAIL) {
+    flaky = isflaky(&tr, outcome);
 
-    for (int i = 0; i < p.cfg.replays; i++) {
-      struct result a = execute(replay, &tr);
-      flaky           = !resultcmp(outcome, a);
-
-      if (flaky) break;
-    }
-
+    // If we don't have replays, we don't shrink since we cannot verify if the
+    // predicate is flaky.
     if (!flaky && p.cfg.replays > 0) shrink(&tr, outcome);
   }
 
