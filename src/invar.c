@@ -541,7 +541,7 @@ static void reduce(struct trial *tr, struct tape *interesting,
   }
 }
 
-static void shrink(struct trial *tr, struct result outcome) {
+static bool shrink(struct trial *tr, struct result outcome) {
   struct tape *t = tr->t;
 
   size_t size = tsize(t->len);
@@ -552,14 +552,17 @@ static void shrink(struct trial *tr, struct result outcome) {
   interesting->cap = t->len;
   tcopy(interesting, t);
 
-  // TODO: mark as flaky instead of aborting run
-  if (!accept(tr, interesting, outcome)) die("replay copy does not hold");
-
-  reduce(tr, interesting, outcome);
-
-  tcopy(t, interesting);
+  bool accepted;
+  // If our check fails, that suggests the predicate is not deterministic, thus
+  // we omit the reduction and return our result
+  if ((accepted = accept(tr, interesting, outcome))) {
+    reduce(tr, interesting, outcome);
+    tcopy(t, interesting);
+  }
 
   free(interesting);
+
+  return accepted;
 }
 
 /* Resolve our effective config for our properties */
@@ -643,7 +646,7 @@ static enum verdict check(struct config c, struct property *prop) {
 
     // If we don't have replays, we don't shrink since we cannot verify if the
     // predicate is flaky.
-    if (!flaky && p.cfg.replays > 0) shrink(&tr, outcome);
+    if (!flaky && p.cfg.replays > 0) flaky = !shrink(&tr, outcome);
   }
 
   result_print(&p, &outcome, tr.s, flaky);
