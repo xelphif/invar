@@ -493,6 +493,13 @@ static void replay(struct trial *tr) {
     r->v = ok;
 }
 
+// Replay tape and print `note` statements
+static void exhibit(struct trial *tr) {
+  tr->pr.print = true;
+  tr->pr.count = 0;
+  execute(replay, tr);
+}
+
 // Load tape into shared memory and evaluate
 static struct result evaluate(struct trial *tr, const struct tape *candidate) {
   struct tape *t = tr->t;
@@ -648,11 +655,7 @@ static enum verdict check(struct config c, struct property *prop) {
 
   result_print(&p, &outcome, tr.s, flaky);
 
-  if (outcome.v == FAIL && !flaky && p.cfg.replays > 0) {
-    pr->print = true;
-    pr->count = 0;
-    execute(replay, &tr);
-  }
+  if (outcome.v == FAIL) exhibit(&tr);
 
   shmfree(shm, p.cfg.capacity);
 
