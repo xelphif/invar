@@ -96,7 +96,6 @@ struct result {
   int  code;
 };
 
-// TODO: improve determinism check to consider tape usage
 static bool resultcmp(struct result a, struct result b) {
   return (a.finished == b.finished) && (a.signaled == b.signaled) &&
          (a.code == b.code) && (a.v == b.v);
@@ -607,6 +606,7 @@ static void shmfree(void *shm, size_t capacity) {
 }
 
 static bool isflaky(struct trial *tr, struct result outcome) {
+  struct tape     *t = tr->t;
   struct property *p = tr->p;
 
   bool flaky = false;
@@ -614,7 +614,9 @@ static bool isflaky(struct trial *tr, struct result outcome) {
   for (int i = 0; i < p->cfg.replays && !flaky; i++) {
     struct result a = execute(replay, tr);
 
-    flaky = !resultcmp(outcome, a);
+    // A deterministic replay should have the same outcome and the same amount
+    // of words consumed.
+    flaky = !resultcmp(outcome, a) || t->off != t->len;
   }
 
   return flaky;
